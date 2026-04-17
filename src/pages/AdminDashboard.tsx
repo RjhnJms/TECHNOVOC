@@ -68,13 +68,13 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
     option_d: "",
     correct_answer: "Option A",
   })
-  
-// eslint-disable-next-line react-hooks/exhaustive-deps
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchAllData() }, [])
 
-    
+
   const fetchAllData = async () => {
-    
+
     // Students
     const { data: sd } = await supabase
       .from("students")
@@ -83,7 +83,7 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
     setStudents(sd || [])
 
 
-    
+
     // Courses
     const { data: cod } = await supabase
       .from("courses")
@@ -125,7 +125,7 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
     if (!question_text || !option_a || !option_b || !option_c || !option_d) {
       setModalError("Please fill in all fields."); return
     }
-    if (!course_id) { setModalError("Please select a course."); return }
+    if (!course_id) { setModalError("Please select a subject."); return }
 
     setModalLoading(true)
     const { error } = await supabase.from("questions").insert([{
@@ -167,12 +167,12 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
 
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
-    { key: "overview",   label: "Overview",   icon: <BarChart3 size={16} /> },
-    { key: "students",   label: "Students",   icon: <Users size={16} /> },
-    { key: "courses",    label: "Courses",    icon: <BookOpen size={16} /> },
-    { key: "rankings",   label: "Rankings",   icon: <Trophy size={16} /> },
-    { key: "sms",        label: "SMS",        icon: <Mail size={16} /> },
-    { key: "questions",  label: "Questions",  icon: <HelpCircle size={16} /> },
+    { key: "overview", label: "Overview", icon: <BarChart3 size={16} /> },
+    { key: "students", label: "Students", icon: <Users size={16} /> },
+    { key: "courses", label: "Courses", icon: <BookOpen size={16} /> },
+    { key: "rankings", label: "Rankings", icon: <Trophy size={16} /> },
+    { key: "sms", label: "SMS", icon: <Mail size={16} /> },
+    { key: "questions", label: "Questions", icon: <HelpCircle size={16} /> },
   ]
 
   const filteredStudents = students.filter(s =>
@@ -207,7 +207,7 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
       {/* ── TABS ── */}
       <div style={{ backgroundColor: "white", padding: "8px 32px", display: "flex", gap: "4px", borderBottom: "1px solid #e5e7eb" }}>
         {tabs.map(tab => (
-                <button
+          <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
             style={{
@@ -216,7 +216,7 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
               backgroundColor: activeTab === tab.key ? "#111827" : "transparent",
               color: activeTab === tab.key ? "white" : "#6b7280",
             }}
-                  >
+          >
             {tab.icon} {tab.label}
           </button>
         ))}
@@ -264,52 +264,52 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
                   <thead>
                     <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
-                      {["Full Name", "LRN", "School Year", "Phone Number", "Registered","Actions"].map(h => (
+                      {["Full Name", "LRN", "School Year", "Phone Number", "Registered", "Actions"].map(h => (
                         <th key={h} style={{ textAlign: "left", padding: "10px 12px", color: "#6b7280", fontWeight: "600" }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {filteredStudents.map((s, i) => (
-                     <tr
-                          key={s.id}
-                          onClick={() => setSelectedStudent(s)}
-                          style={{ borderBottom: "1px solid #f3f4f6", backgroundColor: i % 2 === 0 ? "white" : "#f9fafb", cursor: "pointer", transition: "background 0.15s" }}
-                          onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#eff6ff")}
-                          onMouseLeave={e => (e.currentTarget.style.backgroundColor = i % 2 === 0 ? "white" : "#f9fafb")}
-                        >
+                      <tr
+                        key={s.id}
+                        onClick={() => setSelectedStudent(s)}
+                        style={{ borderBottom: "1px solid #f3f4f6", backgroundColor: i % 2 === 0 ? "white" : "#f9fafb", cursor: "pointer", transition: "background 0.15s" }}
+                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#eff6ff")}
+                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = i % 2 === 0 ? "white" : "#f9fafb")}
+                      >
                         <td style={{ padding: "10px 12px", fontWeight: "500" }}>{s.full_name}</td>
                         <td style={{ padding: "10px 12px" }}>{s.lrn}</td>
                         <td style={{ padding: "10px 12px" }}>{s.school_year}</td>
                         <td style={{ padding: "10px 12px" }}>{s.phone_number}</td>
                         <td style={{ padding: "10px 12px", color: "#6b7280" }}>{new Date(s.created_at).toLocaleDateString()}</td>
-                         <td style={{ padding: "10px 12px" }}>
-                        <button
-                          onClick={e => handleDeleteStudent(s, e)}
-                          disabled={deletingId === s.id}
-                          style={{
-                            padding: "4px 12px",
-                            backgroundColor: deletingId === s.id ? "#f3f4f6" : "#fef2f2",
-                            color: deletingId === s.id ? "#9ca3af" : "#dc2626",
-                            border: "none", borderRadius: "6px",
-                            cursor: deletingId === s.id ? "not-allowed" : "pointer",
-                            fontSize: "12px", fontWeight: "600"
-                          }}
-                        >
-                          {deletingId === s.id ? (
-                            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                              <Loader2 size={14} />
-                              Deleting...
-                            </span>
-                          ) : (
-                            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                              <Trash2 size={14} />
-                              Delete
-                            </span>
-                          )}
-                        </button>
-                      </td>
-                       </tr>
+                        <td style={{ padding: "10px 12px" }}>
+                          <button
+                            onClick={e => handleDeleteStudent(s, e)}
+                            disabled={deletingId === s.id}
+                            style={{
+                              padding: "4px 12px",
+                              backgroundColor: deletingId === s.id ? "#f3f4f6" : "#fef2f2",
+                              color: deletingId === s.id ? "#9ca3af" : "#dc2626",
+                              border: "none", borderRadius: "6px",
+                              cursor: deletingId === s.id ? "not-allowed" : "pointer",
+                              fontSize: "12px", fontWeight: "600"
+                            }}
+                          >
+                            {deletingId === s.id ? (
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                                <Loader2 size={14} />
+                                Deleting...
+                              </span>
+                            ) : (
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                                <Trash2 size={14} />
+                                Delete
+                              </span>
+                            )}
+                          </button>
+                        </td>
+                      </tr>
                     ))}
                   </tbody>
                 </table>
@@ -359,57 +359,57 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
             </div>
             {/* Questions per Course Breakdown */}
             <div style={{ backgroundColor: "white", borderRadius: "12px", padding: "20px", border: "1px solid #e5e7eb", marginBottom: "16px" }}>
-  <p style={{ fontWeight: "700", fontSize: "15px", margin: "0 0 16px", display: "flex", alignItems: "center", gap: 8 }}>
-    <BarChart3 size={16} />
-    Questions per Course
-  </p>
-  <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-    {courses.map(course => {
-      const count = questions.filter(q => q.course_id === course.id).length
-      const maxCount = Math.max(...courses.map(c => questions.filter(q => q.course_id === c.id).length), 1)
-      const pct = Math.round((count / maxCount) * 100)
-      const preSkilled = questions.filter(q => q.course_id === course.id && q.type === "pre-skilled").length
-      const aptitude = questions.filter(q => q.course_id === course.id && q.type === "aptitude").length
-      return (
-        <div key={course.id} style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <span style={{ fontSize: "13px", fontWeight: "600", width: "110px", flexShrink: 0, color: "#374151" }}>
-            {course.course_name}
-          </span>
-          <div style={{ flex: 1, backgroundColor: "#f3f4f6", borderRadius: "6px", height: "10px" }}>
-            <div style={{
-              backgroundColor: count >= 10 ? "#16a34a" : count >= 5 ? "#f59e0b" : "#dc2626",
-              height: "10px", borderRadius: "6px",
-              width: `${pct}%`, transition: "width 0.5s"
-            }} />
-          </div>
-          <span style={{ fontWeight: "700", fontSize: "13px", color: "#111827", minWidth: "20px" }}>{count}</span>
-          <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
-            <span style={{ backgroundColor: "#dbeafe", color: "#1d4ed8", padding: "2px 8px", borderRadius: "20px", fontSize: "11px", fontWeight: "600" }}>
-              PS: {preSkilled}
-            </span>
-            <span style={{ backgroundColor: "#ede9fe", color: "#6d28d9", padding: "2px 8px", borderRadius: "20px", fontSize: "11px", fontWeight: "600" }}>
-              AP: {aptitude}
-            </span>
-          </div>
-        </div>
-      )
-    })}
-  </div>
-  <div style={{ display: "flex", gap: "16px", marginTop: "12px", fontSize: "12px", borderTop: "1px solid #f3f4f6", paddingTop: "10px" }}>
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#16a34a" }}>
-      <span style={{ width: 10, height: 10, borderRadius: 99, backgroundColor: "#16a34a" }} />
-      10+ questions
-    </span>
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#f59e0b" }}>
-      <span style={{ width: 10, height: 10, borderRadius: 99, backgroundColor: "#f59e0b" }} />
-      5–9 questions
-    </span>
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#dc2626" }}>
-      <span style={{ width: 10, height: 10, borderRadius: 99, backgroundColor: "#dc2626" }} />
-      Under 5 questions
-    </span>
-    <span style={{ color: "#6b7280", marginLeft: "auto" }}>PS = Pre-Skilled &nbsp;|&nbsp; AP = Aptitude</span>
-  </div>
+              <p style={{ fontWeight: "700", fontSize: "15px", margin: "0 0 16px", display: "flex", alignItems: "center", gap: 8 }}>
+                <BarChart3 size={16} />
+                Questions per Course
+              </p>
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                {courses.map(course => {
+                  const count = questions.filter(q => q.course_id === course.id).length
+                  const maxCount = Math.max(...courses.map(c => questions.filter(q => q.course_id === c.id).length), 1)
+                  const pct = Math.round((count / maxCount) * 100)
+                  const preSkilled = questions.filter(q => q.course_id === course.id && q.type === "pre-skilled").length
+                  const aptitude = questions.filter(q => q.course_id === course.id && q.type === "aptitude").length
+                  return (
+                    <div key={course.id} style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                      <span style={{ fontSize: "13px", fontWeight: "600", width: "110px", flexShrink: 0, color: "#374151" }}>
+                        {course.course_name}
+                      </span>
+                      <div style={{ flex: 1, backgroundColor: "#f3f4f6", borderRadius: "6px", height: "10px" }}>
+                        <div style={{
+                          backgroundColor: count >= 10 ? "#16a34a" : count >= 5 ? "#f59e0b" : "#dc2626",
+                          height: "10px", borderRadius: "6px",
+                          width: `${pct}%`, transition: "width 0.5s"
+                        }} />
+                      </div>
+                      <span style={{ fontWeight: "700", fontSize: "13px", color: "#111827", minWidth: "20px" }}>{count}</span>
+                      <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+                        <span style={{ backgroundColor: "#dbeafe", color: "#1d4ed8", padding: "2px 8px", borderRadius: "20px", fontSize: "11px", fontWeight: "600" }}>
+                          PS: {preSkilled}
+                        </span>
+                        <span style={{ backgroundColor: "#ede9fe", color: "#6d28d9", padding: "2px 8px", borderRadius: "20px", fontSize: "11px", fontWeight: "600" }}>
+                          AP: {aptitude}
+                        </span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              <div style={{ display: "flex", gap: "16px", marginTop: "12px", fontSize: "12px", borderTop: "1px solid #f3f4f6", paddingTop: "10px" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#16a34a" }}>
+                  <span style={{ width: 10, height: 10, borderRadius: 99, backgroundColor: "#16a34a" }} />
+                  10+ questions
+                </span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#f59e0b" }}>
+                  <span style={{ width: 10, height: 10, borderRadius: 99, backgroundColor: "#f59e0b" }} />
+                  5–9 questions
+                </span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#dc2626" }}>
+                  <span style={{ width: 10, height: 10, borderRadius: 99, backgroundColor: "#dc2626" }} />
+                  Under 5 questions
+                </span>
+                <span style={{ color: "#6b7280", marginLeft: "auto" }}>PS = Pre-Skilled &nbsp;|&nbsp; AP = Aptitude</span>
+              </div>
             </div>
 
             {/* Filters */}
@@ -477,10 +477,10 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
                             {q.correct_answer}
                           </span>
                         </td>
-                       
-                       
+
+
                         <td style={{ padding: "10px 12px" }}>
-                         
+
                           <button
                             onClick={() => {
                               setEditingQuestion(q)
@@ -502,16 +502,16 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
                             </span>
                           </button>
                         </td>
-                        
+
 
 
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                
+
               )}
-              
+
             </div>
           </div>
         )}
@@ -633,7 +633,7 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
         />
       )}
       {/* Edit Question Modal */}
-            {editingQuestion && (
+      {editingQuestion && (
         <EditQuestionModal
           question={editingQuestion}
           courses={courses}
@@ -642,7 +642,7 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
         />
       )}
     </div>
-    
+
   )
 }
 

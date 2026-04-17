@@ -1,0 +1,400 @@
+import { useState, useEffect } from "react"
+import { supabase } from "../supabaseClient"
+import { printStudentResults } from "./printResults"
+
+interface Props {
+  studentId: string
+  studentName: string
+  onLogout: () => void
+  onRetake: () => void
+}
+
+interface AssessmentResult {
+  id: string
+  score: number
+  total_items: number
+  passed: boolean
+  taken_at: string
+  courses?: { course_name: string }
+}
+
+interface RankingResult {
+  id: string
+  score: number
+  rank: number
+  status: string
+  courses?: { course_name: string; capacity: number }
+}
+
+interface StudentInfo {
+  lrn: string
+  school_year: string
+}
+
+export default function StudentResults({ studentId, studentName, onLogout, onRetake }: Props) {
+  const [assessments, setAssessments] = useState<AssessmentResult[]>([])
+  const [rankings, setRankings] = useState<RankingResult[]>([])
+  const [studentInfo, setStudentInfo] = useState<StudentInfo>({ lrn: "", school_year: "" })
+  const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState<"scores" | "rankings">("scores")
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true)
+      const [sData, aData, rData] = await Promise.all([
+        supabase.from("students").select("lrn, school_year").eq("id", studentId).single(),
+        supabase.from("assessments").select("*, courses(course_name)").eq("student_id", studentId).order("score", { ascending: false }),
+        supabase.from("rankings").select("*, courses(course_name, capacity)").eq("student_id", studentId).order("score", { ascending: false }),
+      ])
+      if (sData.data) setStudentInfo(sData.data)
+      setAssessments(aData.data || [])
+      setRankings(rData.data || [])
+      setLoading(false)
+    }
+    load()
+  }, [studentId])
+
+  const top3 = rankings.slice(0, 3)
+  const totalScore = assessments.reduce((s, a) => s + a.score, 0)
+  const totalItems = assessments.reduce((s, a) => s + a.total_items, 0)
+  const overallPct = totalItems > 0 ? Math.round((totalScore / totalItems) * 100) : 0
+  const passed = overallPct >= 50
+  const takenAt = assessments[0]?.taken_at
+    ? new Date(assessments[0].taken_at).toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" })
+    : new Date().toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" })
+
+  const handlePrint = () => printStudentResults({
+    studentName,
+    studentLRN: studentInfo.lrn,
+    schoolYear: studentInfo.school_year,
+    takenAt,
+    totalScore,
+    totalItems,
+    overallPercent: overallPct,
+    passed,
+    top3: top3.map(r => ({ course_name: r.courses?.course_name || "", score: r.score, status: r.status })),
+    assessments: assessments.map(a => ({ course_name: a.courses?.course_name || "", score: a.score, total_items: a.total_items, passed: a.passed })),
+    rankings: rankings.map(r => ({ course_name: r.courses?.course_name || "", score: r.score, rank: r.rank, status: r.status })),
+  })
+
+  return (
+    <div style={{ minHeight: "100vh", backgroundColor: "#f3f4f6", width: "100%" }}>
+
+      {/* Header */}
+      <ResultsHeader
+        studentName={studentName}
+        hasResults={assessments.length > 0}
+        onPrint={handlePrint}
+        onRetake={onRetake}
+        onLogout={onLogout}
+      />
+
+      <div style={{ padding: "32px 40px", maxWidth: "960px", margin: "0 auto", boxSizing: "border-box" as const }}>
+        {loading ? (
+          <LoadingState />
+        ) : assessments.length === 0 ? (
+          <NoAssessmentState onStart={onRetake} />
+        ) : (
+          <>
+            <ResultBanner
+              passed={passed}
+              totalScore={totalScore}
+              totalItems={totalItems}
+              overallPct={overallPct}
+              takenAt={takenAt}
+              onPrint={handlePrint}
+            />
+            <Top3Courses top3={top3} />
+            <ResultTabs
+              activeTab={activeTab}
+              onSwitch={setActiveTab}
+              assessments={assessments}
+              rankings={rankings}
+              totalScore={totalScore}
+              totalItems={totalItems}
+              overallPct={overallPct}
+              passed={passed}
+            />
+            <RetakeSection onRetake={onRetake} />
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Sub-components ────────────────────────────────────────
+
+function ResultsHeader({ studentName, hasResults, onPrint, onRetake, onLogout }: {
+  studentName: string
+  hasResults: boolean
+  onPrint: () => void
+  onRetake: () => void
+  onLogout: () => void
+}) {
+  return (
+    <div style={{ backgroundColor: "white", padding: "16px 32px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #e5e7eb" }}>
+      <div>
+        <h2 style={{ margin: 0, fontWeight: "700", fontSize: "18px" }}>TECHNO-VOC</h2>
+        <p style={{ margin: 0, fontSize: "13px", color: "#6b7280" }}>Welcome, {studentName}</p>
+      </div>
+      <div style={{ display: "flex", gap: "8px" }}>
+        {hasResults && <button onClick={onPrint} style={btnPrint}>Print / Save as PDF</button>}
+        <button onClick={onRetake} style={btnOutline}>Retake</button>
+        <button onClick={onLogout} style={btnOutline}>Logout</button>
+      </div>
+    </div>
+  )
+}
+
+function LoadingState() {
+  return (
+    <div style={{ textAlign: "center", padding: "80px 0" }}>
+      <p style={{ fontSize: "40px", margin: "0 0 8px" }}>⏳</p>
+      <p style={{ color: "#6b7280" }}>Loading your results...</p>
+    </div>
+  )
+}
+
+function NoAssessmentState({ onStart }: { onStart: () => void }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "center" }}>
+      <div style={{ backgroundColor: "white", borderRadius: "16px", padding: "56px 48px", textAlign: "center", maxWidth: "480px", width: "100%", boxShadow: "0 2px 16px rgba(0,0,0,0.06)" }}>
+        <p style={{ fontSize: "52px", margin: "0 0 16px" }}>📋</p>
+        <h3 style={{ fontWeight: "700", fontSize: "20px", margin: "0 0 10px" }}>No Assessment Yet</h3>
+        <p style={{ color: "#6b7280", margin: "0 0 28px", lineHeight: "1.6" }}>
+          You have not taken the TVE Strand Assessment yet. Take it now to find out which courses best match your skills!
+        </p>
+        <button onClick={onStart} style={{ ...btnDark, padding: "14px 36px", fontSize: "15px", width: "100%" }}>
+          Start Assessment Now
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function ResultBanner({ passed, totalScore, totalItems, overallPct, takenAt, onPrint }: {
+  passed: boolean; totalScore: number; totalItems: number
+  overallPct: number; takenAt: string; onPrint: () => void
+}) {
+  return (
+    <>
+      <div style={{ backgroundColor: passed ? "#f0fdf4" : "#fef2f2", border: `2px solid ${passed ? "#16a34a" : "#dc2626"}`, borderRadius: "16px", padding: "28px 32px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px", flexWrap: "wrap", gap: "20px" }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "6px" }}>
+            <span style={{ fontSize: "36px" }}>{passed ? "🎉" : "📚"}</span>
+            <h2 style={{ fontWeight: "800", fontSize: "24px", margin: 0, color: passed ? "#15803d" : "#dc2626" }}>
+              {passed ? "You Passed!" : "Assessment Complete"}
+            </h2>
+          </div>
+          <p style={{ color: "#6b7280", margin: "0 0 4px" }}>
+            {passed ? "You have qualified for TVE strand enrollment." : "Keep practicing to improve your score."}
+          </p>
+          <p style={{ color: "#9ca3af", fontSize: "13px", margin: 0 }}>Taken: {takenAt}</p>
+        </div>
+        <div style={{ display: "flex", gap: "12px" }}>
+          {[
+            { label: "Total Score", value: totalScore, color: "#2563eb" },
+            { label: "Out of", value: totalItems, color: "#6b7280" },
+            { label: "Score Rate", value: `${overallPct}%`, color: passed ? "#16a34a" : "#dc2626" },
+          ].map(stat => (
+            <div key={stat.label} style={{ textAlign: "center", backgroundColor: "white", borderRadius: "12px", padding: "14px 20px", minWidth: "80px" }}>
+              <p style={{ fontSize: "26px", fontWeight: "800", margin: "0 0 2px", color: stat.color }}>{stat.value}</p>
+              <p style={{ fontSize: "11px", color: "#9ca3af", margin: 0 }}>{stat.label}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Print CTA */}
+      <div style={{ backgroundColor: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "12px", padding: "14px 20px", marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <p style={{ fontWeight: "700", color: "#1d4ed8", margin: "0 0 2px" }}>Save or Print Your Results</p>
+          <p style={{ color: "#3b82f6", fontSize: "13px", margin: 0 }}>Download as PDF or print a copy for your records</p>
+        </div>
+        <button onClick={onPrint} style={btnPrint}>Print / Save as PDF</button>
+      </div>
+    </>
+  )
+}
+
+function Top3Courses({ top3 }: { top3: RankingResult[] }) {
+  return (
+    <div style={{ backgroundColor: "white", borderRadius: "16px", padding: "24px", marginBottom: "20px", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
+      <h3 style={{ fontWeight: "700", fontSize: "17px", margin: "0 0 4px" }}>Your Top Course Recommendations</h3>
+      <p style={{ color: "#6b7280", fontSize: "13px", margin: "0 0 20px" }}>Courses where you scored 75% or higher</p>
+
+      {top3.length === 0 ? (
+        <div style={{ backgroundColor: "#fef2f2", borderRadius: "12px", padding: "24px", textAlign: "center" }}>
+          <p style={{ fontSize: "32px", margin: "0 0 8px" }}>😔</p>
+          <p style={{ fontWeight: "700", color: "#dc2626", margin: "0 0 6px", fontSize: "16px" }}>No Qualified Courses</p>
+          <p style={{ color: "#6b7280", fontSize: "13px", margin: 0 }}>
+            You need at least 75% in a course to be recommended. Please retake the assessment.
+          </p>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          {top3.map((r, i) => {
+            const pct = Math.min(Math.round((r.score / 10) * 100), 100)
+            return (
+              <div key={r.id} style={{ display: "flex", alignItems: "center", gap: "16px", padding: "18px", borderRadius: "12px", backgroundColor: i === 0 ? "#fffbeb" : i === 1 ? "#f8fafc" : "#f9fafb", border: `1px solid ${i === 0 ? "#fcd34d" : "#e5e7eb"}` }}>
+                <span style={{ fontWeight: "800", fontSize: "18px", color: i === 0 ? "#d97706" : i === 1 ? "#6b7280" : "#b45309", flexShrink: 0, minWidth: "32px" }}>
+                  #{i + 1}
+                </span>
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontWeight: "700", margin: "0 0 8px", fontSize: "16px" }}>{r.courses?.course_name}</p>
+                  <div style={{ backgroundColor: "#e5e7eb", borderRadius: "4px", height: "8px", marginBottom: "6px" }}>
+                    <div style={{ backgroundColor: i === 0 ? "#d97706" : "#2563eb", height: "8px", borderRadius: "4px", width: `${pct}%`, transition: "width 0.6s" }} />
+                  </div>
+                  <p style={{ fontSize: "12px", color: "#9ca3af", margin: 0 }}>Score: {r.score} pts ({pct}%)</p>
+                </div>
+                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                  <span style={{ backgroundColor: "#dcfce7", color: "#16a34a", padding: "5px 14px", borderRadius: "20px", fontSize: "12px", fontWeight: "700", display: "block", marginBottom: "4px" }}>
+                    Qualified
+                  </span>
+                  <p style={{ fontSize: "11px", color: "#9ca3af", margin: 0 }}>Cap: {r.courses?.capacity || 70}</p>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ResultTabs({ activeTab, onSwitch, assessments, rankings, totalScore, totalItems, overallPct, passed }: {
+  activeTab: "scores" | "rankings"
+  onSwitch: (tab: "scores" | "rankings") => void
+  assessments: AssessmentResult[]
+  rankings: RankingResult[]
+  totalScore: number
+  totalItems: number
+  overallPct: number
+  passed: boolean
+}) {
+  return (
+    <>
+      <div style={{ display: "flex", gap: "4px", marginBottom: "16px", backgroundColor: "white", padding: "4px", borderRadius: "10px", border: "1px solid #e5e7eb", width: "fit-content" }}>
+        {(["scores", "rankings"] as const).map(tab => (
+          <button key={tab} onClick={() => onSwitch(tab)} style={{ padding: "9px 24px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: "600", fontSize: "14px", backgroundColor: activeTab === tab ? "#111827" : "transparent", color: activeTab === tab ? "white" : "#6b7280" }}>
+            {tab === "scores" ? "Score Breakdown" : "Course Rankings"}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "scores" ? (
+        <ScoresTable assessments={assessments} totalScore={totalScore} totalItems={totalItems} overallPct={overallPct} passed={passed} />
+      ) : (
+        <RankingsTable rankings={rankings} />
+      )}
+    </>
+  )
+}
+
+function ScoresTable({ assessments, totalScore, totalItems, overallPct, passed }: {
+  assessments: AssessmentResult[]
+  totalScore: number; totalItems: number; overallPct: number; passed: boolean
+}) {
+  return (
+    <div style={{ backgroundColor: "white", borderRadius: "16px", padding: "24px", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
+      <h3 style={{ fontWeight: "700", fontSize: "16px", margin: "0 0 16px" }}>Score Breakdown by Course</h3>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
+        <thead>
+          <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
+            {["Course", "Score", "Total Items", "Percentage", "Status"].map(h => (
+              <th key={h} style={{ textAlign: "left", padding: "10px 12px", color: "#6b7280", fontWeight: "600" }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {assessments.map((a, i) => {
+            const pct = Math.round((a.score / a.total_items) * 100)
+            return (
+              <tr key={a.id} style={{ borderBottom: "1px solid #f3f4f6", backgroundColor: i % 2 === 0 ? "white" : "#f9fafb" }}>
+                <td style={{ padding: "12px", fontWeight: "500" }}>{a.courses?.course_name}</td>
+                <td style={{ padding: "12px", fontWeight: "700", color: "#2563eb" }}>{a.score}</td>
+                <td style={{ padding: "12px", color: "#6b7280" }}>{a.total_items}</td>
+                <td style={{ padding: "12px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <div style={{ backgroundColor: "#e5e7eb", borderRadius: "4px", height: "6px", width: "80px" }}>
+                      <div style={{ backgroundColor: pct >= 50 ? "#16a34a" : "#f59e0b", height: "6px", borderRadius: "4px", width: `${pct}%` }} />
+                    </div>
+                    <span style={{ fontWeight: "600" }}>{pct}%</span>
+                  </div>
+                </td>
+                <td style={{ padding: "12px" }}>
+                  <span style={{ backgroundColor: a.passed ? "#dcfce7" : "#fef2f2", color: a.passed ? "#16a34a" : "#dc2626", padding: "3px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "600" }}>
+                    {a.passed ? "Passed" : "Failed"}
+                  </span>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+        <tfoot>
+          <tr style={{ borderTop: "2px solid #e5e7eb", backgroundColor: "#f8fafc" }}>
+            <td style={{ padding: "12px", fontWeight: "700" }}>OVERALL TOTAL</td>
+            <td style={{ padding: "12px", fontWeight: "800", color: "#2563eb", fontSize: "16px" }}>{totalScore}</td>
+            <td style={{ padding: "12px", fontWeight: "700", color: "#6b7280" }}>{totalItems}</td>
+            <td style={{ padding: "12px", fontWeight: "700" }}>{overallPct}%</td>
+            <td style={{ padding: "12px" }}>
+              <span style={{ backgroundColor: passed ? "#dcfce7" : "#fef2f2", color: passed ? "#16a34a" : "#dc2626", padding: "3px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "700" }}>
+                {passed ? "Overall Passed" : "Overall Failed"}
+              </span>
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  )
+}
+
+function RankingsTable({ rankings }: { rankings: RankingResult[] }) {
+  return (
+    <div style={{ backgroundColor: "white", borderRadius: "16px", padding: "24px", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
+      <h3 style={{ fontWeight: "700", fontSize: "16px", margin: "0 0 16px" }}>Your Rankings per Course</h3>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
+        <thead>
+          <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
+            {["Course", "Your Score", "Your Rank", "Capacity", "Status"].map(h => (
+              <th key={h} style={{ textAlign: "left", padding: "10px 12px", color: "#6b7280", fontWeight: "600" }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rankings.map((r, i) => (
+            <tr key={r.id} style={{ borderBottom: "1px solid #f3f4f6", backgroundColor: i % 2 === 0 ? "white" : "#f9fafb" }}>
+              <td style={{ padding: "12px", fontWeight: "500" }}>{r.courses?.course_name}</td>
+              <td style={{ padding: "12px", fontWeight: "700", color: "#2563eb" }}>{r.score}</td>
+              <td style={{ padding: "12px", fontWeight: "700" }}>#{r.rank}</td>
+              <td style={{ padding: "12px", color: "#6b7280" }}>{r.courses?.capacity || 70} slots</td>
+              <td style={{ padding: "12px" }}>
+                <span style={{ backgroundColor: r.status === "included" ? "#dcfce7" : "#fef3c7", color: r.status === "included" ? "#16a34a" : "#92400e", padding: "4px 14px", borderRadius: "20px", fontSize: "12px", fontWeight: "600" }}>
+                  {r.status === "included" ? "Included" : "Waitlist"}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function RetakeSection({ onRetake }: { onRetake: () => void }) {
+  return (
+    <div style={{ textAlign: "center", marginTop: "28px" }}>
+      <button onClick={onRetake} style={{ ...btnDark, padding: "14px 40px", fontSize: "15px" }}>
+        Retake Assessment
+      </button>
+      <p style={{ color: "#9ca3af", fontSize: "12px", marginTop: "8px" }}>
+        Note: Retaking will add new results to your record
+      </p>
+    </div>
+  )
+}
+
+const btnDark: React.CSSProperties = { padding: "10px 24px", backgroundColor: "#111827", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "14px" }
+const btnOutline: React.CSSProperties = { padding: "8px 16px", backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "14px" }
+const btnPrint: React.CSSProperties = { padding: "9px 18px", backgroundColor: "#2563eb", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "14px" }

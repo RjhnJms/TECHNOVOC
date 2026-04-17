@@ -179,7 +179,7 @@ export default function LoginPage({ onLogin }: Props) {
         {activeTab === "student" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
             <div>
-              <label style={{ fontWeight: "600", fontSize: "14px" }}>YourFull Name</label>
+              <label style={{ fontWeight: "600", fontSize: "14px" }}>Full Name</label>
               <input
                 placeholder="Enter your full name"
                 value={fullName}

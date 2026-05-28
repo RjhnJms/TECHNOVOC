@@ -7,7 +7,25 @@ import StudentDashboard from './pages/StudentDashboard'
 import type { UserSession } from './types/session'
 
 function AppRoutes() {
-  const [session, setSession] = useState<UserSession | null>(null)
+  const [session, setSessionState] = useState<UserSession | null>(() => {
+    try {
+      const saved = localStorage.getItem('user_session')
+      return saved ? JSON.parse(saved) : null
+    } catch (e) {
+      console.error("Failed to parse user session:", e)
+      return null
+    }
+  })
+
+  const setSession = (newSession: UserSession | null) => {
+    setSessionState(newSession)
+    if (newSession) {
+      localStorage.setItem('user_session', JSON.stringify(newSession))
+    } else {
+      localStorage.removeItem('user_session')
+    }
+  }
+
   const navigate = useNavigate()
 
   if (session?.role === 'admin') {

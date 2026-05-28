@@ -84,11 +84,8 @@ export default function AssessmentQuestion({
       <div style={{ display: "flex", justifyContent: "center", padding: "32px 20px" }}>
         <div style={{ width: "100%", maxWidth: "750px" }}>
 
-          {/* Badges */}
+          {/* Question Type Badge */}
           <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
-            <span style={{ backgroundColor: "#dbeafe", color: "#1d4ed8", padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "600" }}>
-              {currentQuestion?.courses?.course_name}
-            </span>
             <span style={{ backgroundColor: currentQuestion?.type === "pre-skilled" ? "#ede9fe" : "#fef3c7", color: currentQuestion?.type === "pre-skilled" ? "#6d28d9" : "#92400e", padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "600" }}>
               {currentQuestion?.type}
             </span>

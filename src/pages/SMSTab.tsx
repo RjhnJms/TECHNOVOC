@@ -28,7 +28,7 @@ export default function SMSTab() {
   const [apiKey, setApiKey] = useState("")
   const [senderName, setSenderName] = useState("NAVSADMIN")
   const [collectionDate, setCollectionDate] = useState("May 24, 2026, 8:00 AM - 4:00 PM")
-  const [collectionLocation, setCollectionLocation] = useState("Northern Antique Vocational School (NAVS)")
+  const [collectionLocation, setCollectionLocation] = useState("the NAVS Administrative Office")
   const [showSettings, setShowSettings] = useState(false)
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -322,7 +322,7 @@ export default function SMSTab() {
             <div>
               <label style={labelStyle}>Result Collection Location</label>
               <input
-                placeholder="Northern Antique Vocational School (NAVS)"
+                placeholder="e.g., the NAVS Administrative Office"
                 value={collectionLocation}
                 onChange={e => setCollectionLocation(e.target.value)}
                 style={inputStyle}

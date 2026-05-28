@@ -26,13 +26,30 @@ interface Question {
 
 type Stage = "intro" | "assessment" | "results"
 
+function getSavedSession(studentId: string) {
+  try {
+    const savedStateStr = localStorage.getItem(`assessment_state_${studentId}`)
+    if (savedStateStr) {
+      const savedState = JSON.parse(savedStateStr)
+      if (savedState && savedState.questions && savedState.questions.length > 0) {
+        return savedState
+      }
+    }
+  } catch (err) {
+    console.error("Failed to restore saved assessment state:", err)
+  }
+  return null
+}
+
 export default function StudentDashboard({ studentId, studentName, onLogout }: Props) {
-  const [stage, setStage] = useState<Stage>("intro")
-  const [questions, setQuestions] = useState<Question[]>([])
+  const savedSession = getSavedSession(studentId)
+
+  const [stage, setStage] = useState<Stage>(savedSession ? "assessment" : "intro")
+  const [questions, setQuestions] = useState<Question[]>(savedSession ? savedSession.questions : [])
   const [allQuestions, setAllQuestions] = useState<Question[]>([])
   const [preCalculatedTotal, setPreCalculatedTotal] = useState(0)
-  const [currentIndex, setCurrentIndex] = useState(0)
-  const [answers, setAnswers] = useState<Record<number, string>>({})
+  const [currentIndex, setCurrentIndex] = useState<number>(savedSession ? savedSession.currentIndex : 0)
+  const [answers, setAnswers] = useState<Record<number, string>>(savedSession ? savedSession.answers : {})
   const [loading, setLoading] = useState(true)
   const [alreadyTaken, setAlreadyTaken] = useState(false)
 
@@ -49,6 +66,7 @@ export default function StudentDashboard({ studentId, studentName, onLogout }: P
           setAlreadyTaken(true)
           setStage("results")
           setLoading(false)
+          localStorage.removeItem(`assessment_state_${studentId}`)
           return
         }
 
@@ -74,6 +92,18 @@ export default function StudentDashboard({ studentId, studentName, onLogout }: P
     checkTakenAndLoad()
   }, [studentId])
 
+  // Save assessment session state automatically to localStorage
+  useEffect(() => {
+    if (stage === "assessment" && questions.length > 0) {
+      const stateToSave = {
+        questions,
+        currentIndex,
+        answers,
+      }
+      localStorage.setItem(`assessment_state_${studentId}`, JSON.stringify(stateToSave))
+    }
+  }, [stage, questions, currentIndex, answers, studentId])
+
   const startAssessment = () => {
     if (allQuestions.length === 0) {
       alert("No questions found in the database. Please ask admin to add questions first.")
@@ -95,8 +125,16 @@ export default function StudentDashboard({ studentId, studentName, onLogout }: P
     })
 
     // 2. Shuffle the global question order
-    setQuestions(shuffleArray(preparedQuestions))
+    const shuffled = shuffleArray(preparedQuestions)
+    setQuestions(shuffled)
     setStage("assessment")
+    
+    // Save immediately
+    localStorage.setItem(`assessment_state_${studentId}`, JSON.stringify({
+      questions: shuffled,
+      currentIndex: 0,
+      answers: {},
+    }))
   }
 
   const handleAnswer = (questionId: number, answer: string) => {
@@ -111,6 +149,7 @@ export default function StudentDashboard({ studentId, studentName, onLogout }: P
     const scores = buildScores(courseMap)
     await saveAssessments(studentId, scores)
     await saveRankings(studentId, scores)
+    localStorage.removeItem(`assessment_state_${studentId}`) // Clear saved session state upon submission
     setLoading(false)
     setStage("results")
   }
@@ -120,6 +159,7 @@ export default function StudentDashboard({ studentId, studentName, onLogout }: P
     setAnswers({})
     setCurrentIndex(0)
     setQuestions([])
+    localStorage.removeItem(`assessment_state_${studentId}`) // Clear saved session state upon exit/reset
   }
 
   // ── INTRO ──

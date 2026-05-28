@@ -7,21 +7,24 @@ interface OverviewStats {
   totalAssessments: number
   qualified: number
   passingRate: number
-  mostTakenCourse: string
-  mostTakenCount: number
+  notYetAssessed: number
+  availableSlots: number
+  totalCapacity: number
+  mostQualifiedCourse: string
+  mostQualifiedCount: number
   totalEnrolled: number
   totalWaitlist: number
-  courseBreakdown: { course_name: string; count: number; enrolled: number; passRate: number }[]
+  courseBreakdown: { course_name: string; count: number; enrolled: number; waitlist: number; passRate: number }[]
 }
 
 interface AssessmentEntry {
   passed: boolean
-  courses: { course_name: string }[] | null
+  courses: { course_name: string } | { course_name: string }[] | null
 }
 
 interface RankEntry {
   status: string
-  courses: { course_name: string }[] | null
+  courses: { course_name: string } | { course_name: string }[] | null
 }
 
 export default function OverviewTab() {
@@ -30,8 +33,11 @@ export default function OverviewTab() {
     totalAssessments: 0,
     qualified: 0,
     passingRate: 0,
-    mostTakenCourse: "—",
-    mostTakenCount: 0,
+    notYetAssessed: 0,
+    availableSlots: 0,
+    totalCapacity: 0,
+    mostQualifiedCourse: "—",
+    mostQualifiedCount: 0,
     totalEnrolled: 0,
     totalWaitlist: 0,
     courseBreakdown: [],
@@ -54,15 +60,34 @@ export default function OverviewTab() {
       .from("assessments")
       .select("*", { count: "exact", head: true })
 
-    // Qualified students (passed at least one course)
-    const { count: qualified } = await supabase
+    // Qualified students (unique students who passed at least one course)
+    const { data: qualifiedData } = await supabase
+      .from("assessments")
+      .select("student_id")
+      .eq("passed", true)
+    const qualified = new Set(qualifiedData?.map(a => a.student_id)).size
+
+    // Not Yet Assessed — students who registered but haven't taken any assessment
+    const { data: assessedStudentData } = await supabase
+      .from("assessments")
+      .select("student_id")
+    const assessedStudentIds = new Set(assessedStudentData?.map(a => a.student_id))
+    const notYetAssessed = (totalStudents || 0) - assessedStudentIds.size
+
+    // Total course capacity and available slots
+    const { data: allCourses } = await supabase
+      .from("courses")
+      .select("capacity")
+    const totalCapacity = allCourses?.reduce((sum, c) => sum + (c.capacity || 0), 0) || 0
+
+    // Passing rate (based on total passed assessment rows vs total assessments)
+    const { count: totalPassed } = await supabase
       .from("assessments")
       .select("*", { count: "exact", head: true })
       .eq("passed", true)
 
-    // Passing rate
     const passingRate = totalAssessments && totalAssessments > 0
-      ? Math.round(((qualified || 0) / totalAssessments) * 100)
+      ? Math.round(((totalPassed || 0) / totalAssessments) * 100)
       : 0
 
     // Total enrolled (included in rankings)
@@ -87,25 +112,44 @@ export default function OverviewTab() {
     // Count how many students are enrolled (included) per course
     courseData?.forEach((a) => {
       const entry = a as unknown as AssessmentEntry
-      const name = Array.isArray(entry.courses) && entry.courses.length > 0
-        ? entry.courses[0].course_name
-        : "Unknown"
+      let name = "Unknown"
+      if (entry.courses) {
+        if (Array.isArray(entry.courses)) {
+          if (entry.courses.length > 0) {
+            name = entry.courses[0].course_name
+          }
+        } else if (typeof entry.courses === "object") {
+          name = (entry.courses as any).course_name || "Unknown"
+        }
+      }
       if (!courseMap[name]) courseMap[name] = { course_name: name, count: 0, passed: 0 }
       courseMap[name].count += 1
       if (entry.passed) courseMap[name].passed += 1
     })
-    // Enrolled per course
+    // Enrolled and Waitlisted per course
     const { data: rankData } = await supabase
       .from("rankings")
       .select("course_id, status, courses(course_name)")
 
     const enrolledMap: Record<string, number> = {}
+    const waitlistMap: Record<string, number> = {}
     rankData?.forEach((r) => {
       const entry = r as unknown as RankEntry
-      const name = Array.isArray(entry.courses) && entry.courses.length > 0
-        ? entry.courses[0].course_name
-        : "Unknown"
-      if (entry.status === "included") enrolledMap[name] = (enrolledMap[name] || 0) + 1
+      let name = "Unknown"
+      if (entry.courses) {
+        if (Array.isArray(entry.courses)) {
+          if (entry.courses.length > 0) {
+            name = entry.courses[0].course_name
+          }
+        } else if (typeof entry.courses === "object") {
+          name = (entry.courses as any).course_name || "Unknown"
+        }
+      }
+      if (entry.status === "included") {
+        enrolledMap[name] = (enrolledMap[name] || 0) + 1
+      } else if (entry.status === "waitlist") {
+        waitlistMap[name] = (waitlistMap[name] || 0) + 1
+      }
     })
 
     const courseBreakdown = Object.values(courseMap)
@@ -113,19 +157,48 @@ export default function OverviewTab() {
         course_name: c.course_name,
         count: c.count,
         enrolled: enrolledMap[c.course_name] || 0,
+        waitlist: waitlistMap[c.course_name] || 0,
         passRate: c.count > 0 ? Math.round((c.passed / c.count) * 100) : 0,
       }))
-      .sort((a, b) => b.count - a.count)
+      .sort((a, b) => {
+        if (b.count !== a.count) {
+          return b.count - a.count // Primary sort: count descending
+        }
+        return a.course_name.localeCompare(b.course_name) // Secondary sort: alphabetical
+      })
 
-    const mostTaken = courseBreakdown[0]
+    // Calculate course with the most students qualified (passed)
+    let mostQualifiedCourse = "—"
+    let mostQualifiedCount = 0
+
+    Object.values(courseMap).forEach(c => {
+      if (c.course_name !== "Unknown" || Object.keys(courseMap).length === 1) {
+        if (c.passed > mostQualifiedCount) {
+          mostQualifiedCourse = c.course_name
+          mostQualifiedCount = c.passed
+        }
+      }
+    })
+
+    // Fallback to highest count if no one has passed any course yet
+    if (mostQualifiedCount === 0 && Object.values(courseMap).length > 0) {
+      const sortedByCount = Object.values(courseMap).sort((a, b) => b.count - a.count)
+      mostQualifiedCourse = sortedByCount[0]?.course_name || "—"
+      mostQualifiedCount = 0
+    }
+
+    const availableSlots = totalCapacity - (totalEnrolled || 0)
 
     setStats({
       totalStudents: totalStudents || 0,
       totalAssessments: totalAssessments || 0,
       qualified: qualified || 0,
       passingRate,
-      mostTakenCourse: mostTaken?.course_name || "—",
-      mostTakenCount: mostTaken?.count || 0,
+      notYetAssessed: notYetAssessed > 0 ? notYetAssessed : 0,
+      availableSlots: availableSlots > 0 ? availableSlots : 0,
+      totalCapacity,
+      mostQualifiedCourse,
+      mostQualifiedCount,
       totalEnrolled: totalEnrolled || 0,
       totalWaitlist: totalWaitlist || 0,
       courseBreakdown,
@@ -170,16 +243,16 @@ export default function OverviewTab() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px", marginBottom: "24px" }}>
         {[
           { label: "Total Students", value: stats.totalStudents, icon: <Users size={22} />, color: "#2563eb", bg: "#eff6ff", sub: "registered students" },
-          { label: "Qualified", value: stats.qualified, icon: <CheckCircle2 size={22} />, color: "#16a34a", bg: "#f0fdf4", sub: "passed at least one course" },
-          { label: "Passing Rate", value: `${stats.passingRate}%`, icon: <TrendingUp size={22} />, color: "#7c3aed", bg: "#f5f3ff", sub: "overall pass rate" },
-          { label: "Most Taken", value: stats.mostTakenCourse, icon: <Trophy size={22} />, color: "#d97706", bg: "#fffbeb", sub: `${stats.mostTakenCount} assessments` },
+          { label: "Not Yet Assessed", value: stats.notYetAssessed, icon: <ClipboardList size={22} />, color: "#dc2626", bg: "#fef2f2", sub: "haven't taken assessment" },
+          { label: "Available Slots", value: stats.availableSlots, icon: <CheckCircle2 size={22} />, color: "#16a34a", bg: "#f0fdf4", sub: `of ${stats.totalCapacity} total capacity` },
+          { label: "Most Qualified", value: stats.mostQualifiedCourse, icon: <Trophy size={22} />, color: "#d97706", bg: "#fffbeb", sub: `${stats.mostQualifiedCount} qualified` },
         ].map(stat => (
           <div key={stat.label} style={{ backgroundColor: stat.bg, borderRadius: "14px", padding: "20px", border: `1px solid ${stat.color}22` }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
               <p style={{ color: "#6b7280", fontSize: "13px", margin: 0, fontWeight: "600" }}>{stat.label}</p>
               <span>{stat.icon}</span>
             </div>
-            <h2 style={{ color: stat.color, fontSize: stat.label === "Most Taken" ? "18px" : "30px", margin: "0 0 4px", fontWeight: "800", lineHeight: 1.1 }}>
+            <h2 style={{ color: stat.color, fontSize: stat.label === "Most Qualified" ? "18px" : "30px", margin: "0 0 4px", fontWeight: "800", lineHeight: 1.1 }}>
               {loading ? "—" : stat.value}
             </h2>
             <p style={{ color: "#9ca3af", fontSize: "12px", margin: 0 }}>{stat.sub}</p>
@@ -191,7 +264,7 @@ export default function OverviewTab() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", marginBottom: "24px" }}>
         {[
           { label: "Total Assessments Taken", value: stats.totalAssessments, icon: <ClipboardList size={22} />, color: "#0891b2" },
-          { label: "Qualified (Included)", value: stats.totalEnrolled, icon: <GraduationCap size={22} />, color: "#16a34a" },
+          { label: "Qualified", value: stats.totalEnrolled, icon: <GraduationCap size={22} />, color: "#16a34a" },
           { label: "On Waitlist", value: stats.totalWaitlist, icon: <Clock size={22} />, color: "#f59e0b" },
         ].map(stat => (
           <div key={stat.label} style={{ backgroundColor: "white", borderRadius: "12px", padding: "20px", border: "1px solid #e5e7eb", display: "flex", alignItems: "center", gap: "16px" }}>
@@ -238,19 +311,29 @@ export default function OverviewTab() {
                   </div>
                   <div style={{ flex: 1, backgroundColor: "#f3f4f6", borderRadius: "6px", height: "10px" }}>
                     <div style={{
-                      backgroundColor: i === 0 ? "#2563eb" : i === 1 ? "#7c3aed" : i === 2 ? "#16a34a" : "#94a3b8",
+                      backgroundColor: "#2563eb", // Brand Blue for consistent, clean chart design
                       height: "10px", borderRadius: "6px",
                       width: `${barWidth}%`,
                       transition: "width 0.6s"
                     }} />
                   </div>
-                  <div style={{ display: "flex", gap: "12px", flexShrink: 0, fontSize: "12px" }}>
-                    <span style={{ fontWeight: "700", color: "#374151", minWidth: "60px" }}>{c.count} students</span>
-                    <span style={{ color: "#16a34a", fontWeight: "600", minWidth: "50px" }}>{c.enrolled} enrolled</span>
+                  <div style={{ display: "flex", gap: "12px", flexShrink: 0, fontSize: "12px", alignItems: "center" }}>
+                    <span style={{ fontWeight: "700", color: "#374151", minWidth: "70px" }}>{c.count} Assessed</span>
+                    <span style={{ color: "#16a34a", fontWeight: "600", minWidth: "70px" }}>{c.enrolled} Qualified</span>
+                    <span style={{
+                      backgroundColor: c.waitlist > 0 ? "#fffbe6" : "#f9fafb",
+                      color: c.waitlist > 0 ? "#d97706" : "#6b7280",
+                      padding: "2px 8px", borderRadius: "20px", fontWeight: "600",
+                      border: c.waitlist > 0 ? "1px solid #ffe58f" : "1px solid #e5e7eb",
+                      minWidth: "70px", textAlign: "center"
+                    }}>
+                      {c.waitlist} Waitlist
+                    </span>
                     <span style={{
                       backgroundColor: c.passRate >= 50 ? "#dcfce7" : "#fef2f2",
                       color: c.passRate >= 50 ? "#16a34a" : "#dc2626",
-                      padding: "2px 8px", borderRadius: "20px", fontWeight: "600"
+                      padding: "2px 8px", borderRadius: "20px", fontWeight: "600",
+                      minWidth: "55px", textAlign: "center"
                     }}>
                       {c.passRate}% pass
                     </span>
@@ -274,9 +357,9 @@ export default function OverviewTab() {
             { label: "Assessment attempts", value: stats.totalAssessments },
             { label: "Students who passed at least one course", value: stats.qualified },
             { label: "Overall passing rate", value: `${stats.passingRate}%` },
-            { label: "Students currently enrolled", value: stats.totalEnrolled },
+            { label: "Students currently qualified", value: stats.totalEnrolled },
             { label: "Students on waitlist", value: stats.totalWaitlist },
-            { label: "Most popular course", value: stats.mostTakenCourse },
+            { label: "Most qualified course", value: stats.mostQualifiedCourse },
             { label: "Courses available", value: 11 },
           ].map(item => (
             <div key={item.label} style={{ display: "flex", justifyContent: "space-between", backgroundColor: "white", padding: "10px 14px", borderRadius: "8px", border: "1px solid #e5e7eb" }}>

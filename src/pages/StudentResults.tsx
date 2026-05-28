@@ -381,7 +381,7 @@ function RankingsTable({ rankings }: { rankings: RankingResult[] }) {
               <td style={{ padding: "12px", color: "#6b7280" }}>{r.courses?.capacity || 70} slots</td>
               <td style={{ padding: "12px" }}>
                 <span style={{ backgroundColor: r.status === "included" ? "#dcfce7" : "#fef3c7", color: r.status === "included" ? "#16a34a" : "#92400e", padding: "4px 14px", borderRadius: "20px", fontSize: "12px", fontWeight: "600" }}>
-                  {r.status === "included" ? "Included" : "Waitlist"}
+                  {r.status === "included" ? "Qualified" : "Waitlist"}
                 </span>
               </td>
             </tr>

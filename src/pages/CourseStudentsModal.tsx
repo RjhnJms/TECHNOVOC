@@ -87,7 +87,7 @@ export default function CourseStudentsModal({ course, onClose }: Props) {
             </h2>
             <p style={{ color: "#6b7280", fontSize: "13px", margin: 0 }}>
               Capacity: {course.capacity} slots &nbsp;•&nbsp;
-              <span style={{ color: "#16a34a", fontWeight: "600" }}>{included} Enrolled</span> &nbsp;•&nbsp;
+              <span style={{ color: "#16a34a", fontWeight: "600" }}>{included} Qualified</span> &nbsp;•&nbsp;
               <span style={{ color: "#f59e0b", fontWeight: "600" }}>{waitlist} Waitlist</span> &nbsp;•&nbsp;
               <span style={{ color: "#2563eb", fontWeight: "600" }}>{course.capacity - included} Available</span>
             </p>
@@ -114,7 +114,7 @@ export default function CourseStudentsModal({ course, onClose }: Props) {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "16px" }}>
             {[
               { label: "Total", value: students.length, color: "#2563eb" },
-              { label: "Enrolled", value: included, color: "#16a34a" },
+              { label: "Qualified", value: included, color: "#16a34a" },
               { label: "Waitlist", value: waitlist, color: "#f59e0b" },
               { label: "Available", value: course.capacity - included, color: "#7c3aed" },
             ].map(stat => (
@@ -165,7 +165,7 @@ export default function CourseStudentsModal({ course, onClose }: Props) {
                     textTransform: "capitalize"
                   }}
                 >
-                  {f === "all" ? `All (${students.length})` : f === "included" ? `Included (${included})` : `Waitlist (${waitlist})`}
+                  {f === "all" ? `All (${students.length})` : f === "included" ? `Qualified (${included})` : `Waitlist (${waitlist})`}
                 </button>
               ))}
             </div>
@@ -214,7 +214,7 @@ export default function CourseStudentsModal({ course, onClose }: Props) {
                         color: s.status === "included" ? "#16a34a" : "#92400e",
                         padding: "3px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "600"
                       }}>
-                        {s.status === "included" ? "Included" : "Waitlist"}
+                        {s.status === "included" ? "Qualified" : "Waitlist"}
                       </span>
                     </td>
                   </tr>

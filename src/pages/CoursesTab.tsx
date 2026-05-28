@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react"
 import { supabase } from "../supabaseClient"
-import CourseStudentsModal from "./CourseStudentsModal"
 import { BookOpen, CheckCircle2, ClipboardList, Clock, Loader2, RefreshCw, Users } from "lucide-react"
 
 interface Course {
@@ -18,7 +17,6 @@ interface CourseStats extends Course {
 }
 
 export default function CoursesTab() {
-  const [selectedCourse, setSelectedCourse] = useState<CourseStats | null>(null)
   const [courses, setCourses] = useState<CourseStats[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
@@ -188,7 +186,7 @@ export default function CoursesTab() {
           onChange={e => setSortBy(e.target.value as "name" | "enrolled" | "available")}
           style={{ padding: "10px 14px", borderRadius: "8px", border: "1px solid #e5e7eb", fontSize: "14px", backgroundColor: "white", cursor: "pointer", outline: "none" }}
         >
-          <option value="enrolled">Sort by Most Enrolled</option>
+          <option value="enrolled">Sort by Most Qualified</option>
           <option value="available">Sort by Most Available</option>
           <option value="name">Sort by Name</option>
         </select>
@@ -237,7 +235,7 @@ export default function CoursesTab() {
                 {/* Capacity Bar */}
                 <div style={{ marginBottom: "12px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
-                    <span style={{ fontSize: "13px", color: "#6b7280" }}>Enrolled</span>
+                    <span style={{ fontSize: "13px", color: "#6b7280" }}>Qualified</span>
                     <span style={{ fontSize: "13px", fontWeight: "700", color: barColor }}>{course.enrolled} / {course.capacity}</span>
                   </div>
                   <div style={{ backgroundColor: "#e5e7eb", borderRadius: "6px", height: "10px" }}>
@@ -250,7 +248,7 @@ export default function CoursesTab() {
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", borderTop: "1px solid #f3f4f6", paddingTop: "12px" }}>
                   <div style={{ textAlign: "center" }}>
                     <p style={{ fontWeight: "700", fontSize: "16px", margin: "0 0 2px", color: "#16a34a" }}>{course.enrolled}</p>
-                    <p style={{ fontSize: "11px", color: "#6b7280", margin: 0 }}>Enrolled</p>
+                    <p style={{ fontSize: "11px", color: "#6b7280", margin: 0 }}>Qualified</p>
                   </div>
                   <div style={{ textAlign: "center", borderLeft: "1px solid #f3f4f6", borderRight: "1px solid #f3f4f6" }}>
                     <p style={{ fontWeight: "700", fontSize: "16px", margin: "0 0 2px", color: "#f59e0b" }}>{course.waitlist}</p>
@@ -271,22 +269,6 @@ export default function CoursesTab() {
                     </span>
                   </div>
                 )}
-
-                {/* ── View Students Button ── */}
-                <button
-                  onClick={() => setSelectedCourse(course)}
-                  style={{
-                    width: "100%", marginTop: "12px", padding: "9px",
-                    backgroundColor: "#111827", color: "white",
-                    border: "none", borderRadius: "8px",
-                    cursor: "pointer", fontWeight: "600", fontSize: "13px"
-                  }}
-                >
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <Users size={14} />
-                    View Students ({course.enrolled + course.waitlist})
-                  </span>
-                </button>
               </div>
             )
           })}
@@ -302,7 +284,7 @@ export default function CoursesTab() {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
           <thead>
             <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
-              {["Course", "Enrolled", "Waitlist", "Available", "Capacity", "Pass Rate", "Status", ""].map(h => (
+              {["Course", "Qualified", "Waitlist", "Available", "Capacity", "Pass Rate", "Status"].map(h => (
                 <th key={h} style={{ textAlign: "left", padding: "10px 12px", color: "#6b7280", fontWeight: "600" }}>{h}</th>
               ))}
             </tr>
@@ -337,32 +319,12 @@ export default function CoursesTab() {
                       {available === 0 ? "Full" : pct >= 60 ? "Filling Up" : "Open"}
                     </span>
                   </td>
-                  {/* View Students in table row */}
-                  <td style={{ padding: "12px" }}>
-                    <button
-                      onClick={() => setSelectedCourse(course)}
-                      style={{ padding: "4px 12px", backgroundColor: "#eff6ff", color: "#2563eb", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px", fontWeight: "600" }}
-                    >
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                        <Users size={14} />
-                        View
-                      </span>
-                    </button>
-                  </td>
                 </tr>
               )
             })}
           </tbody>
         </table>
       </div>
-
-      {/* ── Course Students Modal ── */}
-      {selectedCourse && (
-        <CourseStudentsModal
-          course={selectedCourse}
-          onClose={() => setSelectedCourse(null)}
-        />
-      )}
     </div>
   )
 }

@@ -4,12 +4,13 @@ import RankingsTab from "./RankingsTab"
 import SMSTab from "./SMSTab"
 import CoursesTab from "./CoursesTab"
 import OverviewTab from "./OverviewTab"
+import WaitlistTab from "./WaitlistTab"
 import StudentDetailModal from "./StudentDetailModal"
 import EditQuestionModal from "./EditQuestionModal"
-import { BarChart3, Users, BookOpen, Trophy, Mail, HelpCircle, Loader2, Pencil, Trash2 } from "lucide-react"
+import { BarChart3, Users, BookOpen, Trophy, Mail, HelpCircle, Loader2, Pencil, Trash2, Clock } from "lucide-react"
 
 interface Props { adminName: string; onLogout: () => void }
-type Tab = "overview" | "students" | "courses" | "rankings" | "sms" | "questions"
+type Tab = "overview" | "students" | "courses" | "rankings" | "waitlist" | "sms" | "questions"
 
 interface Question {
   id: number
@@ -202,6 +203,7 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
     { key: "students",   label: "Students",   icon: <Users size={16} /> },
     { key: "courses",    label: "Courses",    icon: <BookOpen size={16} /> },
     { key: "rankings",   label: "Rankings",   icon: <Trophy size={16} /> },
+    { key: "waitlist",   label: "Waitlist",   icon: <Clock size={16} /> },
     { key: "sms",        label: "SMS",        icon: <Mail size={16} /> },
     { key: "questions",  label: "Questions",  icon: <HelpCircle size={16} /> },
   ]
@@ -354,6 +356,11 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
 
         {/* RANKINGS */}
         {activeTab === "rankings" && <RankingsTab />}
+
+        {/* WAITLIST */}
+        {activeTab === "waitlist" && (
+          <WaitlistTab onSelectStudent={(student) => setSelectedStudent(student)} />
+        )}
 
         {/* SMS */}
         {activeTab === "sms" && <SMSTab />}

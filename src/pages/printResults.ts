@@ -42,7 +42,7 @@ export function printStudentResults(opts: PrintResultsOptions) {
       <td><strong>${r.course_name}</strong></td>
       <td>${r.score} pts</td>
       <td class="${r.status === 'included' ? 'badge-green' : 'badge-yellow'}">
-        ${r.status === 'included' ? 'Included' : 'Waitlist'}
+        ${r.status === 'included' ? 'Qualified' : 'Waitlist'}
       </td>
     </tr>
   `).join("")
@@ -53,7 +53,7 @@ export function printStudentResults(opts: PrintResultsOptions) {
       <td>${r.course_name}</td>
       <td><strong>${r.score}</strong></td>
       <td class="${r.status === 'included' ? 'badge-green' : 'badge-yellow'}">
-        ${r.status === 'included' ? 'Included' : 'Waitlist'}
+        ${r.status === 'included' ? 'Qualified' : 'Waitlist'}
       </td>
     </tr>
   `).join("")

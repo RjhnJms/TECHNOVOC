@@ -221,7 +221,7 @@ function Top3Section({ top3 }: { top3: RankingResult[] }) {
             <div style={{ textAlign: "right" }}>
               <p style={{ fontWeight: "700", color: "#2563eb", margin: "0 0 4px" }}>{r.score}%</p>
               <span style={{ backgroundColor: r.status === "included" ? "#dcfce7" : "#fef3c7", color: r.status === "included" ? "#16a34a" : "#92400e", padding: "2px 10px", borderRadius: "20px", fontSize: "11px", fontWeight: "700" }}>
-                {r.status === "included" ? "Included" : "Waitlist"}
+                {r.status === "included" ? "Qualified" : "Waitlist"}
               </span>
             </div>
           </div>
@@ -323,7 +323,7 @@ function RankingsTable({ rankings }: { rankings: RankingResult[] }) {
             <td style={{ padding: "9px 12px", color: "#6b7280" }}>{r.courses?.capacity || 70} slots</td>
             <td style={{ padding: "9px 12px" }}>
               <span style={{ backgroundColor: r.status === "included" ? "#dcfce7" : "#fef3c7", color: r.status === "included" ? "#16a34a" : "#92400e", padding: "4px 12px", borderRadius: "20px", fontSize: "11px", fontWeight: "600" }}>
-                {r.status === "included" ? "Included" : "Waitlist"}
+                {r.status === "included" ? "Qualified" : "Waitlist"}
               </span>
             </td>
           </tr>

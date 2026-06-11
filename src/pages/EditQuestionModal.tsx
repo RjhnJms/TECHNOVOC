@@ -22,11 +22,12 @@ interface Question {
 interface Props {
   question: Question
   courses: Course[]
+  lockCourseId?: string
   onClose: () => void
   onSaved: () => void
 }
 
-export default function EditQuestionModal({ question, courses, onClose, onSaved }: Props) {
+export default function EditQuestionModal({ question, courses, lockCourseId, onClose, onSaved }: Props) {
   const [form, setForm] = useState({
     question_text: question.question_text,
     course_id: question.course_id,
@@ -107,17 +108,19 @@ export default function EditQuestionModal({ question, courses, onClose, onSaved 
         </div>
 
         {/* Course & Type */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px" }}>
-          <div>
-            <label style={labelStyle}>Course</label>
-            <select
-              value={form.course_id}
-              onChange={e => setForm({ ...form, course_id: e.target.value })}
-              style={{ ...selectStyle, marginTop: "6px", width: "100%" }}
-            >
-              {courses.map(c => <option key={c.id} value={c.id}>{c.course_name}</option>)}
-            </select>
-          </div>
+        <div style={{ display: "grid", gridTemplateColumns: lockCourseId ? "1fr" : "1fr 1fr", gap: "12px", marginBottom: "16px" }}>
+          {!lockCourseId && (
+            <div>
+              <label style={labelStyle}>Course</label>
+              <select
+                value={form.course_id}
+                onChange={e => setForm({ ...form, course_id: e.target.value })}
+                style={{ ...selectStyle, marginTop: "6px", width: "100%" }}
+              >
+                {courses.map(c => <option key={c.id} value={c.id}>{c.course_name}</option>)}
+              </select>
+            </div>
+          )}
           <div>
             <label style={labelStyle}>Type</label>
             <select

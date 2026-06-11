@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import { supabase } from "../supabaseClient"
-import { BarChart3, BookOpen, ClipboardList, CheckCircle2, Clock, FileText, GraduationCap, Loader2, RefreshCw, Trophy, TrendingUp, Users } from "lucide-react"
+import { isLabAccessCodeRequired } from "../utils/examAccessCode"
+import { ClipboardList, CheckCircle2, Clock, GraduationCap, Loader2, RefreshCw, Trophy, Users } from "lucide-react"
 
 interface OverviewStats {
   totalStudents: number
@@ -15,6 +16,9 @@ interface OverviewStats {
   totalEnrolled: number
   totalWaitlist: number
   courseBreakdown: { course_name: string; count: number; enrolled: number; waitlist: number; passRate: number }[]
+  labCodesRequired: boolean
+  notAssessedNeedCode: number
+  notAssessedWithCode: number
 }
 
 interface AssessmentEntry {
@@ -41,6 +45,9 @@ export default function OverviewTab() {
     totalEnrolled: 0,
     totalWaitlist: 0,
     courseBreakdown: [],
+    labCodesRequired: false,
+    notAssessedNeedCode: 0,
+    notAssessedWithCode: 0,
   })
   const [loading, setLoading] = useState(true)
   const [lastUpdated, setLastUpdated] = useState<string>("")
@@ -50,37 +57,31 @@ export default function OverviewTab() {
   const fetchStats = async () => {
     setLoading(true)
 
-    // Total students
     const { count: totalStudents } = await supabase
       .from("students")
       .select("*", { count: "exact", head: true })
 
-    // Total assessments taken
     const { count: totalAssessments } = await supabase
       .from("assessments")
       .select("*", { count: "exact", head: true })
 
-    // Qualified students (unique students who passed at least one course)
     const { data: qualifiedData } = await supabase
       .from("assessments")
       .select("student_id")
       .eq("passed", true)
     const qualified = new Set(qualifiedData?.map(a => a.student_id)).size
 
-    // Not Yet Assessed — students who registered but haven't taken any assessment
     const { data: assessedStudentData } = await supabase
       .from("assessments")
       .select("student_id")
     const assessedStudentIds = new Set(assessedStudentData?.map(a => a.student_id))
     const notYetAssessed = (totalStudents || 0) - assessedStudentIds.size
 
-    // Total course capacity and available slots
     const { data: allCourses } = await supabase
       .from("courses")
       .select("capacity")
     const totalCapacity = allCourses?.reduce((sum, c) => sum + (c.capacity || 0), 0) || 0
 
-    // Passing rate (based on total passed assessment rows vs total assessments)
     const { count: totalPassed } = await supabase
       .from("assessments")
       .select("*", { count: "exact", head: true })
@@ -90,43 +91,36 @@ export default function OverviewTab() {
       ? Math.round(((totalPassed || 0) / totalAssessments) * 100)
       : 0
 
-    // Total enrolled (included in rankings)
     const { count: totalEnrolled } = await supabase
       .from("rankings")
       .select("*", { count: "exact", head: true })
       .eq("status", "included")
 
-    // Total waitlist
     const { count: totalWaitlist } = await supabase
       .from("rankings")
       .select("*", { count: "exact", head: true })
       .eq("status", "waitlist")
 
-    // Course breakdown — assessments per course
     const { data: courseData } = await supabase
       .from("assessments")
       .select("course_id, passed, courses(course_name)")
 
-    // Build course breakdown
     const courseMap: Record<string, { course_name: string; count: number; passed: number }> = {}
-    // Count how many students are enrolled (included) per course
     courseData?.forEach((a) => {
       const entry = a as unknown as AssessmentEntry
       let name = "Unknown"
       if (entry.courses) {
         if (Array.isArray(entry.courses)) {
-          if (entry.courses.length > 0) {
-            name = entry.courses[0].course_name
-          }
+          if (entry.courses.length > 0) name = entry.courses[0].course_name
         } else if (typeof entry.courses === "object") {
-          name = (entry.courses as any).course_name || "Unknown"
+          name = (entry.courses as { course_name: string }).course_name || "Unknown"
         }
       }
       if (!courseMap[name]) courseMap[name] = { course_name: name, count: 0, passed: 0 }
       courseMap[name].count += 1
       if (entry.passed) courseMap[name].passed += 1
     })
-    // Enrolled and Waitlisted per course
+
     const { data: rankData } = await supabase
       .from("rankings")
       .select("course_id, status, courses(course_name)")
@@ -138,18 +132,13 @@ export default function OverviewTab() {
       let name = "Unknown"
       if (entry.courses) {
         if (Array.isArray(entry.courses)) {
-          if (entry.courses.length > 0) {
-            name = entry.courses[0].course_name
-          }
+          if (entry.courses.length > 0) name = entry.courses[0].course_name
         } else if (typeof entry.courses === "object") {
-          name = (entry.courses as any).course_name || "Unknown"
+          name = (entry.courses as { course_name: string }).course_name || "Unknown"
         }
       }
-      if (entry.status === "included") {
-        enrolledMap[name] = (enrolledMap[name] || 0) + 1
-      } else if (entry.status === "waitlist") {
-        waitlistMap[name] = (waitlistMap[name] || 0) + 1
-      }
+      if (entry.status === "included") enrolledMap[name] = (enrolledMap[name] || 0) + 1
+      else if (entry.status === "waitlist") waitlistMap[name] = (waitlistMap[name] || 0) + 1
     })
 
     const courseBreakdown = Object.values(courseMap)
@@ -161,16 +150,12 @@ export default function OverviewTab() {
         passRate: c.count > 0 ? Math.round((c.passed / c.count) * 100) : 0,
       }))
       .sort((a, b) => {
-        if (b.count !== a.count) {
-          return b.count - a.count // Primary sort: count descending
-        }
-        return a.course_name.localeCompare(b.course_name) // Secondary sort: alphabetical
+        if (b.count !== a.count) return b.count - a.count
+        return a.course_name.localeCompare(b.course_name)
       })
 
-    // Calculate course with the most students qualified (passed)
     let mostQualifiedCourse = "—"
     let mostQualifiedCount = 0
-
     Object.values(courseMap).forEach(c => {
       if (c.course_name !== "Unknown" || Object.keys(courseMap).length === 1) {
         if (c.passed > mostQualifiedCount) {
@@ -179,15 +164,29 @@ export default function OverviewTab() {
         }
       }
     })
-
-    // Fallback to highest count if no one has passed any course yet
     if (mostQualifiedCount === 0 && Object.values(courseMap).length > 0) {
       const sortedByCount = Object.values(courseMap).sort((a, b) => b.count - a.count)
       mostQualifiedCourse = sortedByCount[0]?.course_name || "—"
-      mostQualifiedCount = 0
     }
 
     const availableSlots = totalCapacity - (totalEnrolled || 0)
+
+    const labCodesRequired = await isLabAccessCodeRequired()
+    let notAssessedNeedCode = 0
+    let notAssessedWithCode = 0
+
+    if (labCodesRequired && notYetAssessed > 0) {
+      const [{ data: redemptions }, { data: allStudents }] = await Promise.all([
+        supabase.from("exam_access_code_redemptions").select("student_id"),
+        supabase.from("students").select("id"),
+      ])
+      const redeemedStudentIds = new Set((redemptions || []).map(r => r.student_id))
+      for (const s of allStudents || []) {
+        if (assessedStudentIds.has(s.id)) continue
+        if (redeemedStudentIds.has(s.id)) notAssessedWithCode++
+        else notAssessedNeedCode++
+      }
+    }
 
     setStats({
       totalStudents: totalStudents || 0,
@@ -202,22 +201,41 @@ export default function OverviewTab() {
       totalEnrolled: totalEnrolled || 0,
       totalWaitlist: totalWaitlist || 0,
       courseBreakdown,
+      labCodesRequired,
+      notAssessedNeedCode,
+      notAssessedWithCode,
     })
 
     setLastUpdated(new Date().toLocaleTimeString())
     setLoading(false)
   }
 
-  const getCourseIcon = () => <BookOpen size={20} />
+  const notYetAssessedSub = () => {
+    if (!stats.labCodesRequired || stats.notYetAssessed === 0) {
+      return "haven't taken assessment"
+    }
+    if (stats.notAssessedWithCode > 0 && stats.notAssessedNeedCode > 0) {
+      return `${stats.notAssessedWithCode} redeemed batch code · ${stats.notAssessedNeedCode} need code`
+    }
+    if (stats.notAssessedNeedCode > 0) {
+      return `${stats.notAssessedNeedCode} need batch code in Settings`
+    }
+    return `${stats.notAssessedWithCode} have batch code ready`
+  }
 
   return (
     <div>
-      {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
         <div>
           <h2 style={{ fontWeight: "700", fontSize: "22px", margin: "0 0 4px" }}>Dashboard Overview</h2>
           <p style={{ color: "#6b7280", margin: 0, fontSize: "13px" }}>
             {lastUpdated ? `Last updated: ${lastUpdated}` : "Loading live data..."}
+            {!loading && (
+              <span style={{ color: "#9ca3af" }}>
+                {" · "}
+                Lab codes {stats.labCodesRequired ? "on" : "off"}
+              </span>
+            )}
           </p>
         </div>
         <button
@@ -239,11 +257,10 @@ export default function OverviewTab() {
         </button>
       </div>
 
-      {/* Main Stats Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px", marginBottom: "24px" }}>
         {[
           { label: "Total Students", value: stats.totalStudents, icon: <Users size={22} />, color: "#2563eb", bg: "#eff6ff", sub: "registered students" },
-          { label: "Not Yet Assessed", value: stats.notYetAssessed, icon: <ClipboardList size={22} />, color: "#dc2626", bg: "#fef2f2", sub: "haven't taken assessment" },
+          { label: "Not Yet Assessed", value: stats.notYetAssessed, icon: <ClipboardList size={22} />, color: "#dc2626", bg: "#fef2f2", sub: notYetAssessedSub() },
           { label: "Available Slots", value: stats.availableSlots, icon: <CheckCircle2 size={22} />, color: "#16a34a", bg: "#f0fdf4", sub: `of ${stats.totalCapacity} total capacity` },
           { label: "Most Qualified", value: stats.mostQualifiedCourse, icon: <Trophy size={22} />, color: "#d97706", bg: "#fffbeb", sub: `${stats.mostQualifiedCount} qualified` },
         ].map(stat => (
@@ -255,12 +272,11 @@ export default function OverviewTab() {
             <h2 style={{ color: stat.color, fontSize: stat.label === "Most Qualified" ? "18px" : "30px", margin: "0 0 4px", fontWeight: "800", lineHeight: 1.1 }}>
               {loading ? "—" : stat.value}
             </h2>
-            <p style={{ color: "#9ca3af", fontSize: "12px", margin: 0 }}>{stat.sub}</p>
+            <p style={{ color: "#9ca3af", fontSize: "12px", margin: 0 }}>{loading ? "..." : stat.sub}</p>
           </div>
         ))}
       </div>
 
-      {/* Secondary Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", marginBottom: "24px" }}>
         {[
           { label: "Total Assessments Taken", value: stats.totalAssessments, icon: <ClipboardList size={22} />, color: "#0891b2" },
@@ -279,95 +295,6 @@ export default function OverviewTab() {
             </div>
           </div>
         ))}
-      </div>
-
-      {/* Course Breakdown */}
-      <div style={{ backgroundColor: "white", borderRadius: "14px", padding: "24px", border: "1px solid #e5e7eb", marginBottom: "24px" }}>
-        <h3 style={{ fontWeight: "700", fontSize: "16px", margin: "0 0 4px", display: "flex", alignItems: "center", gap: 8 }}>
-          <BarChart3 size={16} />
-          Course Assessment Breakdown
-        </h3>
-        <p style={{ color: "#6b7280", fontSize: "13px", margin: "0 0 20px" }}>Number of students who took assessment per course</p>
-
-        {loading ? (
-          <p style={{ textAlign: "center", color: "#9ca3af", padding: "32px 0" }}>Loading data...</p>
-        ) : stats.courseBreakdown.length === 0 ? (
-          <p style={{ textAlign: "center", color: "#9ca3af", padding: "32px 0" }}>No assessment data yet. Students will appear here after taking the assessment.</p>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            {stats.courseBreakdown.map((c, i) => {
-              const maxCount = stats.courseBreakdown[0]?.count || 1
-              const barWidth = Math.round((c.count / maxCount) * 100)
-              return (
-                <div key={c.course_name} style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                  <div style={{ width: "28px", textAlign: "right", color: "#9ca3af", fontSize: "13px", fontWeight: "600", flexShrink: 0 }}>
-                    #{i + 1}
-                  </div>
-                  <div style={{ width: "28px", fontSize: "16px", flexShrink: 0 }}>
-                    {getCourseIcon()}
-                  </div>
-                  <div style={{ width: "120px", fontSize: "13px", fontWeight: "600", flexShrink: 0 }}>
-                    {c.course_name}
-                  </div>
-                  <div style={{ flex: 1, backgroundColor: "#f3f4f6", borderRadius: "6px", height: "10px" }}>
-                    <div style={{
-                      backgroundColor: "#2563eb", // Brand Blue for consistent, clean chart design
-                      height: "10px", borderRadius: "6px",
-                      width: `${barWidth}%`,
-                      transition: "width 0.6s"
-                    }} />
-                  </div>
-                  <div style={{ display: "flex", gap: "12px", flexShrink: 0, fontSize: "12px", alignItems: "center" }}>
-                    <span style={{ fontWeight: "700", color: "#374151", minWidth: "70px" }}>{c.count} Assessed</span>
-                    <span style={{ color: "#16a34a", fontWeight: "600", minWidth: "70px" }}>{c.enrolled} Qualified</span>
-                    <span style={{
-                      backgroundColor: c.waitlist > 0 ? "#fffbe6" : "#f9fafb",
-                      color: c.waitlist > 0 ? "#d97706" : "#6b7280",
-                      padding: "2px 8px", borderRadius: "20px", fontWeight: "600",
-                      border: c.waitlist > 0 ? "1px solid #ffe58f" : "1px solid #e5e7eb",
-                      minWidth: "70px", textAlign: "center"
-                    }}>
-                      {c.waitlist} Waitlist
-                    </span>
-                    <span style={{
-                      backgroundColor: c.passRate >= 50 ? "#dcfce7" : "#fef2f2",
-                      color: c.passRate >= 50 ? "#16a34a" : "#dc2626",
-                      padding: "2px 8px", borderRadius: "20px", fontWeight: "600",
-                      minWidth: "55px", textAlign: "center"
-                    }}>
-                      {c.passRate}% pass
-                    </span>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Quick Summary */}
-      <div style={{ backgroundColor: "#f8fafc", borderRadius: "14px", padding: "20px", border: "1px solid #e2e8f0" }}>
-        <h3 style={{ fontWeight: "700", fontSize: "15px", margin: "0 0 14px", color: "#374151", display: "flex", alignItems: "center", gap: 8 }}>
-          <FileText size={16} />
-          Quick Summary
-        </h3>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-          {[
-            { label: "Students registered", value: stats.totalStudents },
-            { label: "Assessment attempts", value: stats.totalAssessments },
-            { label: "Students who passed at least one course", value: stats.qualified },
-            { label: "Overall passing rate", value: `${stats.passingRate}%` },
-            { label: "Students currently qualified", value: stats.totalEnrolled },
-            { label: "Students on waitlist", value: stats.totalWaitlist },
-            { label: "Most qualified course", value: stats.mostQualifiedCourse },
-            { label: "Courses available", value: 11 },
-          ].map(item => (
-            <div key={item.label} style={{ display: "flex", justifyContent: "space-between", backgroundColor: "white", padding: "10px 14px", borderRadius: "8px", border: "1px solid #e5e7eb" }}>
-              <span style={{ color: "#6b7280", fontSize: "13px" }}>{item.label}</span>
-              <span style={{ fontWeight: "700", fontSize: "13px", color: "#111827" }}>{loading ? "—" : item.value}</span>
-            </div>
-          ))}
-        </div>
       </div>
     </div>
   )

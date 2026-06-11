@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react"
 import { supabase } from "../supabaseClient"
 import { printStudentResults } from "./printResults"
+import AssignCoursePanel from "../components/AssignCoursePanel"
+import { computeTop3Recommendations } from "../utils/studentRecommendations"
+import { isPassingScore, QUESTIONS_PER_TRACK } from "../utils/trackRanking"
 
 interface Props {
   student: {
@@ -8,7 +11,6 @@ interface Props {
     full_name: string
     lrn: string
     school_year: string
-    phone_number: string
     created_at: string
   }
   onClose: () => void
@@ -16,6 +18,7 @@ interface Props {
 
 interface AssessmentResult {
   id: string
+  course_id: string
   score: number
   total_items: number
   passed: boolean
@@ -23,314 +26,492 @@ interface AssessmentResult {
   courses?: { course_name: string }
 }
 
-interface RankingResult {
-  id: string
+interface Top3Item {
+  course_id: string
+  course_name: string
   score: number
   rank: number
-  status: string
-  courses?: { course_name: string; capacity: number }
+}
+
+interface Course {
+  id: string
+  course_name: string
 }
 
 export default function StudentDetailModal({ student, onClose }: Props) {
   const [assessments, setAssessments] = useState<AssessmentResult[]>([])
-  const [rankings, setRankings] = useState<RankingResult[]>([])
+  const [preferredScores, setPreferredScores] = useState<AssessmentResult[]>([])
+  const [preferredCourseIds, setPreferredCourseIds] = useState<string[]>([])
+  const [top3, setTop3] = useState<Top3Item[]>([])
+  const [allPreferredPassed, setAllPreferredPassed] = useState(false)
+  const [placementRankingId, setPlacementRankingId] = useState<string | null>(null)
+  const [assignedCourseName, setAssignedCourseName] = useState<string | null>(null)
+  const [courses, setCourses] = useState<Course[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<"scores" | "rankings">("scores")
+  const [showRecommendations, setShowRecommendations] = useState(false)
+
+  const load = async () => {
+      setLoading(true)
+      const [aData, pData, rData, cData] = await Promise.all([
+        supabase
+          .from("assessments")
+          .select("*, courses(course_name)")
+          .eq("student_id", student.id)
+          .order("score", { ascending: false }),
+        supabase
+          .from("student_course_preferences")
+          .select("course_id")
+          .eq("student_id", student.id)
+          .order("preference_order"),
+        supabase
+          .from("rankings")
+          .select("id, status, course_id, courses(course_name)")
+          .eq("student_id", student.id),
+        supabase.from("courses").select("id, course_name").order("course_name"),
+      ])
+
+      const rows = (aData.data || []) as AssessmentResult[]
+      const prefIds = (pData.data || []).map(p => p.course_id)
+      setAssessments(rows)
+      setPreferredCourseIds(prefIds)
+      setCourses(cData.data || [])
+
+      const rankings = rData.data || []
+      const placementRow = rankings.find(r => r.status === "placement_waitlist")
+      setPlacementRankingId(placementRow?.id ?? null)
+
+      const manualAssign = rankings.find(
+        r => r.status === "included" && r.course_id && !prefIds.includes(r.course_id)
+      )
+      if (manualAssign?.courses) {
+        const c = manualAssign.courses as { course_name?: string }
+        setAssignedCourseName(c.course_name ?? null)
+      } else {
+        setAssignedCourseName(null)
+      }
+
+      const computed = computeTop3Recommendations(
+        rows.map(a => ({
+          course_id: a.course_id,
+          score: a.score,
+          total_items: a.total_items,
+        })),
+        prefIds
+      )
+
+      const passedAll = computed[0]?.fromPreferredCourses ?? false
+      setAllPreferredPassed(passedAll)
+
+      const scoreByCourse = new Map(rows.map(a => [a.course_id, a]))
+      setPreferredScores(
+        prefIds
+          .map(id => scoreByCourse.get(id))
+          .filter((a): a is AssessmentResult => !!a)
+      )
+
+      const nameById = Object.fromEntries((cData.data || []).map(c => [c.id, c.course_name]))
+
+      setTop3(
+        computed.map(c => ({
+          course_id: c.course_id,
+          course_name: nameById[c.course_id] || "Unknown",
+          score: c.score,
+          rank: c.rank,
+        }))
+      )
+
+      setLoading(false)
+  }
 
   useEffect(() => {
-    fetchResults()
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose() }
+    void load()
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (showRecommendations) setShowRecommendations(false)
+        else onClose()
+      }
+    }
     window.addEventListener("keydown", handler)
     return () => window.removeEventListener("keydown", handler)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [student.id])
 
-  const fetchResults = async () => {
-    setLoading(true)
-    const [aData, rData] = await Promise.all([
-      supabase.from("assessments").select("*, courses(course_name)").eq("student_id", student.id).order("score", { ascending: false }),
-      supabase.from("rankings").select("*, courses(course_name, capacity)").eq("student_id", student.id).order("score", { ascending: false }),
-    ])
-    setAssessments(aData.data || [])
-    setRankings(rData.data || [])
-    setLoading(false)
-  }
-
-  const totalScore = assessments.reduce((s, a) => s + a.score, 0)
-  const totalItems = assessments.reduce((s, a) => s + a.total_items, 0)
-  const overallPct = totalItems > 0 ? Math.round((totalScore / totalItems) * 100) : 0
-  const passed = overallPct >= 50
-  const top3: RankingResult[] = rankings.length > 0
-    ? rankings.slice(0, 3)
-    : assessments
-        .filter(a => a.total_items > 0)
-        .sort((a, b) => (b.score / b.total_items) - (a.score / a.total_items))
-        .slice(0, 3)
-        .map((a, i) => ({
-          id: a.id,
-          score: Math.round((a.score / a.total_items) * 100),
-          rank: i + 1,
-          status: "included",
-          courses: a.courses ? { course_name: a.courses.course_name, capacity: 70 } : undefined,
-        }))
   const takenAt = assessments[0]?.taken_at
-    ? new Date(assessments[0].taken_at).toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" })
+    ? new Date(assessments[0].taken_at).toLocaleDateString("en-PH", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })
     : "Not taken yet"
 
-  const handlePrint = () => printStudentResults({
-    studentName: student.full_name,
-    studentLRN: student.lrn,
-    schoolYear: student.school_year,
-    takenAt,
-    totalScore,
-    totalItems,
-    overallPercent: overallPct,
-    passed,
-    top3: top3.map(r => ({ course_name: r.courses?.course_name || "", score: r.score, status: r.status })),
-    assessments: assessments.map(a => ({ course_name: a.courses?.course_name || "", score: a.score, total_items: a.total_items, passed: a.passed })),
-    rankings: rankings.map(r => ({ course_name: r.courses?.course_name || "", score: r.score, rank: r.rank, status: r.status })),
-  })
+  const handlePrint = () => {
+    const totalScore = assessments.reduce((s, a) => s + a.score, 0)
+    const totalItems = assessments.reduce((s, a) => s + a.total_items, 0)
+    printStudentResults({
+      studentName: student.full_name,
+      studentLRN: student.lrn,
+      schoolYear: student.school_year,
+      takenAt,
+      totalScore,
+      totalItems,
+      top3: top3.map(r => ({
+        course_name: r.course_name,
+        score: r.score,
+        total_items: QUESTIONS_PER_TRACK,
+      })),
+      assessments: assessments.map(a => ({
+        course_name: a.courses?.course_name || "",
+        score: a.score,
+        total_items: a.total_items,
+      })),
+      rankings: top3.map(r => ({
+        course_name: r.course_name,
+        score: r.score,
+        rank: r.rank,
+        status: "included",
+      })),
+    })
+  }
 
   return (
-    <div
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}
-      style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "20px" }}
-    >
-      <div style={{ backgroundColor: "white", borderRadius: "16px", width: "100%", maxWidth: "800px", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 24px 64px rgba(0,0,0,0.3)" }}>
-
-        {/* Header */}
-        <ModalHeader
-          student={student}
-          hasResults={assessments.length > 0}
-          onPrint={handlePrint}
-          onClose={onClose}
-        />
-
-        <div style={{ padding: "24px 28px" }}>
-          {loading ? (
-            <LoadingState />
-          ) : assessments.length === 0 ? (
-            <EmptyState name={student.full_name} />
-          ) : (
-            <>
-              <ScoreBanner totalScore={totalScore} totalItems={totalItems} overallPct={overallPct} passed={passed} takenAt={takenAt} />
-              <Top3Section top3={top3} />
-              <TabSwitcher activeTab={activeTab} onSwitch={setActiveTab} />
-              {activeTab === "scores"
-                ? <ScoresTable assessments={assessments} totalScore={totalScore} totalItems={totalItems} overallPct={overallPct} passed={passed} />
-                : <RankingsTable rankings={rankings} />
-              }
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── Sub-components ──────────────────────────────────────
-
-function ModalHeader({ student, hasResults, onPrint, onClose }: {
-  student: Props["student"]
-  hasResults: boolean
-  onPrint: () => void
-  onClose: () => void
-}) {
-  return (
-    <div style={{ padding: "24px 28px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "flex-start", position: "sticky", top: 0, backgroundColor: "white", zIndex: 10, borderRadius: "16px 16px 0 0" }}>
-      <div>
-        <h2 style={{ fontWeight: "800", fontSize: "20px", margin: "0 0 4px" }}>{student.full_name}</h2>
-        <div style={{ display: "flex", gap: "16px", fontSize: "13px", color: "#6b7280" }}>
-          <span>LRN: <strong>{student.lrn}</strong></span>
-          <span>SY: <strong>{student.school_year}</strong></span>
-          <span>{student.phone_number}</span>
-        </div>
-      </div>
-      <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-        {hasResults && (
-          <button onClick={onPrint} style={btnPrint}>Print Results</button>
-        )}
-        <button onClick={onClose} style={{ background: "none", border: "1px solid #e5e7eb", borderRadius: "8px", width: "36px", height: "36px", cursor: "pointer", fontSize: "18px", color: "#6b7280" }}>✕</button>
-      </div>
-    </div>
-  )
-}
-
-function LoadingState() {
-  return (
-    <div style={{ textAlign: "center", padding: "48px 0" }}>
-      <p style={{ fontSize: "32px", margin: "0 0 8px" }}>⏳</p>
-      <p style={{ color: "#6b7280" }}>Loading results...</p>
-    </div>
-  )
-}
-
-function EmptyState({ name }: { name: string }) {
-  return (
-    <div style={{ textAlign: "center", padding: "48px 0" }}>
-      <p style={{ fontSize: "40px", margin: "0 0 12px" }}>📋</p>
-      <h3 style={{ fontWeight: "700", margin: "0 0 8px" }}>No Assessment Taken</h3>
-      <p style={{ color: "#6b7280", margin: 0 }}>{name} has not taken the TVE Strand Assessment yet.</p>
-    </div>
-  )
-}
-
-function ScoreBanner({ totalScore, totalItems, overallPct, passed, takenAt }: {
-  totalScore: number; totalItems: number; overallPct: number; passed: boolean; takenAt: string
-}) {
-  return (
-    <div style={{ backgroundColor: passed ? "#f0fdf4" : "#fef2f2", border: `2px solid ${passed ? "#16a34a" : "#dc2626"}`, borderRadius: "12px", padding: "20px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", flexWrap: "wrap", gap: "12px" }}>
-      <div>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "4px" }}>
-          <span style={{ fontSize: "28px" }}>{passed ? "🎉" : "📚"}</span>
-          <h3 style={{ fontWeight: "800", fontSize: "20px", margin: 0, color: passed ? "#15803d" : "#dc2626" }}>{passed ? "Passed" : "Failed"}</h3>
-        </div>
-        <p style={{ color: "#9ca3af", fontSize: "13px", margin: 0 }}>Taken: {takenAt}</p>
-      </div>
-      <div style={{ display: "flex", gap: "10px" }}>
-        {[
-          { label: "Score", value: totalScore, color: "#2563eb" },
-          { label: "Total", value: totalItems, color: "#6b7280" },
-          { label: "Rate", value: `${overallPct}%`, color: passed ? "#16a34a" : "#dc2626" },
-        ].map(s => (
-          <div key={s.label} style={{ textAlign: "center", backgroundColor: "white", borderRadius: "10px", padding: "10px 16px", minWidth: "68px" }}>
-            <p style={{ fontSize: "22px", fontWeight: "800", margin: "0 0 2px", color: s.color }}>{s.value}</p>
-            <p style={{ fontSize: "11px", color: "#9ca3af", margin: 0 }}>{s.label}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function Top3Section({ top3 }: { top3: RankingResult[] }) {
-  if (top3.length === 0) return null
-  return (
-    <div style={{ marginBottom: "20px" }}>
-      <p style={{ fontWeight: "700", fontSize: "15px", margin: "0 0 12px" }}>Top 3 Course Recommendations</p>
-      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-        {top3.map((r, i) => (
-          <div key={r.id} style={{ display: "flex", alignItems: "center", gap: "14px", padding: "14px 16px", borderRadius: "10px", backgroundColor: i === 0 ? "#fffbeb" : "#f9fafb", border: `1px solid ${i === 0 ? "#fcd34d" : "#e5e7eb"}` }}>
-            <span style={{ fontWeight: "800", fontSize: "16px", color: i === 0 ? "#d97706" : i === 1 ? "#6b7280" : "#b45309", minWidth: "28px" }}>#{i + 1}</span>
-            <div style={{ flex: 1 }}>
-              <p style={{ fontWeight: "700", margin: "0 0 6px" }}>{r.courses?.course_name}</p>
-              <div style={{ backgroundColor: "#e5e7eb", borderRadius: "4px", height: "6px" }}>
-                <div style={{ backgroundColor: i === 0 ? "#d97706" : "#2563eb", height: "6px", borderRadius: "4px", width: `${Math.min(r.score, 100)}%` }} />
+    <>
+      <div
+        onClick={e => {
+          if (e.target === e.currentTarget) onClose()
+        }}
+        style={{
+          position: "fixed",
+          inset: 0,
+          backgroundColor: "rgba(0,0,0,0.55)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000,
+          padding: "20px",
+        }}
+      >
+        <div
+          style={{
+            backgroundColor: "white",
+            borderRadius: "16px",
+            width: "100%",
+            maxWidth: "640px",
+            maxHeight: "90vh",
+            overflowY: "auto",
+            boxShadow: "0 24px 64px rgba(0,0,0,0.3)",
+          }}
+        >
+          <div
+            style={{
+              padding: "24px 28px",
+              borderBottom: "1px solid #e5e7eb",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+            }}
+          >
+            <div>
+              <h2 style={{ fontWeight: "800", fontSize: "20px", margin: "0 0 4px" }}>
+                {student.full_name}
+              </h2>
+              <div style={{ display: "flex", gap: "16px", fontSize: "13px", color: "#6b7280" }}>
+                <span>
+                  LRN: <strong>{student.lrn}</strong>
+                </span>
+                <span>
+                  SY: <strong>{student.school_year}</strong>
+                </span>
               </div>
             </div>
-            <div style={{ textAlign: "right" }}>
-              <p style={{ fontWeight: "700", color: "#2563eb", margin: "0 0 4px" }}>{r.score}%</p>
-              <span style={{ backgroundColor: r.status === "included" ? "#dcfce7" : "#fef3c7", color: r.status === "included" ? "#16a34a" : "#92400e", padding: "2px 10px", borderRadius: "20px", fontSize: "11px", fontWeight: "700" }}>
-                {r.status === "included" ? "Qualified" : "Waitlist"}
-              </span>
+            <div style={{ display: "flex", gap: "8px" }}>
+              {assessments.length > 0 && (
+                <button onClick={handlePrint} style={btnPrint}>
+                  Print
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                style={{
+                  background: "none",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: "8px",
+                  width: "36px",
+                  height: "36px",
+                  cursor: "pointer",
+                  fontSize: "18px",
+                  color: "#6b7280",
+                }}
+              >
+                ✕
+              </button>
             </div>
           </div>
-        ))}
-      </div>
-    </div>
-  )
-}
 
-function TabSwitcher({ activeTab, onSwitch }: {
-  activeTab: "scores" | "rankings"
-  onSwitch: (tab: "scores" | "rankings") => void
-}) {
-  return (
-    <div style={{ display: "flex", gap: "4px", marginBottom: "14px", backgroundColor: "#f3f4f6", padding: "4px", borderRadius: "10px", width: "fit-content" }}>
-      {(["scores", "rankings"] as const).map(tab => (
-        <button key={tab} onClick={() => onSwitch(tab)} style={{ padding: "7px 20px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: "600", fontSize: "13px", backgroundColor: activeTab === tab ? "white" : "transparent", color: activeTab === tab ? "#111827" : "#6b7280", boxShadow: activeTab === tab ? "0 1px 4px rgba(0,0,0,0.08)" : "none" }}>
-          {tab === "scores" ? "Score Breakdown" : "Rankings"}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-function ScoresTable({ assessments, totalScore, totalItems, overallPct, passed }: {
-  assessments: AssessmentResult[]
-  totalScore: number
-  totalItems: number
-  overallPct: number
-  passed: boolean
-}) {
-  return (
-    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-      <thead>
-        <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
-          {["Course", "Score", "Total", "Percentage", "Status"].map(h => (
-            <th key={h} style={{ textAlign: "left", padding: "8px 12px", color: "#6b7280", fontWeight: "600" }}>{h}</th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {assessments.map((a, i) => {
-          const pct = Math.round((a.score / a.total_items) * 100)
-          return (
-            <tr key={a.id} style={{ borderBottom: "1px solid #f3f4f6", backgroundColor: i % 2 === 0 ? "white" : "#f9fafb" }}>
-              <td style={{ padding: "9px 12px", fontWeight: "500" }}>{a.courses?.course_name}</td>
-              <td style={{ padding: "9px 12px", fontWeight: "700", color: "#2563eb" }}>{a.score}</td>
-              <td style={{ padding: "9px 12px", color: "#6b7280" }}>{a.total_items}</td>
-              <td style={{ padding: "9px 12px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <div style={{ backgroundColor: "#e5e7eb", borderRadius: "4px", height: "6px", width: "70px" }}>
-                    <div style={{ backgroundColor: pct >= 50 ? "#16a34a" : "#f59e0b", height: "6px", borderRadius: "4px", width: `${pct}%` }} />
-                  </div>
-                  <span style={{ fontWeight: "600", fontSize: "12px" }}>{pct}%</span>
+          <div style={{ padding: "24px 28px" }}>
+            {loading ? (
+              <p style={{ textAlign: "center", color: "#6b7280", padding: "40px 0" }}>Loading...</p>
+            ) : assessments.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "40px 0" }}>
+                <p style={{ fontSize: "40px", margin: "0 0 12px" }}>📋</p>
+                <h3 style={{ fontWeight: "700", margin: "0 0 8px" }}>No Assessment Taken</h3>
+                <p style={{ color: "#6b7280", margin: 0 }}>
+                  {student.full_name} has not taken the assessment yet.
+                </p>
+              </div>
+            ) : allPreferredPassed ? (
+              <>
+                <div
+                  style={{
+                    backgroundColor: "#f0fdf4",
+                    border: "2px solid #16a34a",
+                    borderRadius: "12px",
+                    padding: "16px 20px",
+                    marginBottom: "20px",
+                  }}
+                >
+                  <p style={{ fontWeight: "800", color: "#15803d", margin: "0 0 4px", fontSize: "18px" }}>
+                    Passed on all preferred courses
+                  </p>
+                  <p style={{ color: "#6b7280", fontSize: "13px", margin: 0 }}>Taken: {takenAt}</p>
                 </div>
-              </td>
-              <td style={{ padding: "9px 12px" }}>
-                <span style={{ backgroundColor: a.passed ? "#dcfce7" : "#fef2f2", color: a.passed ? "#16a34a" : "#dc2626", padding: "2px 10px", borderRadius: "20px", fontSize: "11px", fontWeight: "600" }}>
-                  {a.passed ? "Passed" : "Failed"}
-                </span>
-              </td>
-            </tr>
-          )
-        })}
-      </tbody>
-      <tfoot>
-        <tr style={{ borderTop: "2px solid #e5e7eb", backgroundColor: "#f8fafc" }}>
-          <td style={{ padding: "9px 12px", fontWeight: "700" }}>TOTAL</td>
-          <td style={{ padding: "9px 12px", fontWeight: "800", color: "#2563eb" }}>{totalScore}</td>
-          <td style={{ padding: "9px 12px", color: "#6b7280", fontWeight: "700" }}>{totalItems}</td>
-          <td style={{ padding: "9px 12px", fontWeight: "700" }}>{overallPct}%</td>
-          <td style={{ padding: "9px 12px" }}>
-            <span style={{ backgroundColor: passed ? "#dcfce7" : "#fef2f2", color: passed ? "#16a34a" : "#dc2626", padding: "2px 10px", borderRadius: "20px", fontSize: "11px", fontWeight: "700" }}>
-              {passed ? "Passed" : "Failed"}
-            </span>
-          </td>
-        </tr>
-      </tfoot>
-    </table>
+                <p style={{ fontWeight: "700", margin: "0 0 12px" }}>Preferred course scores</p>
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  {preferredScores.map((a, i) => {
+                    const passed = isPassingScore(a.score, a.total_items)
+                    return (
+                      <div
+                        key={a.id}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          padding: "14px 16px",
+                          borderRadius: "10px",
+                          backgroundColor: "#f9fafb",
+                          border: "1px solid #e5e7eb",
+                        }}
+                      >
+                        <div>
+                          <p style={{ margin: 0, fontWeight: "700" }}>
+                            #{i + 1} {a.courses?.course_name}
+                          </p>
+                          <p style={{ margin: "4px 0 0", fontSize: "13px", color: "#6b7280" }}>
+                            Preferred course
+                          </p>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <p style={{ margin: 0, fontWeight: "800", fontSize: "20px", color: "#2563eb" }}>
+                            {a.score} / {a.total_items || QUESTIONS_PER_TRACK}
+                          </p>
+                          <span
+                            style={{
+                              fontSize: "12px",
+                              fontWeight: "600",
+                              padding: "4px 10px",
+                              borderRadius: "12px",
+                              backgroundColor: passed ? "#dcfce7" : "#fef2f2",
+                              color: passed ? "#16a34a" : "#dc2626",
+                            }}
+                          >
+                            {passed ? "Passed" : "Failed"}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            ) : (
+              <div style={{ padding: "8px 0" }}>
+                {assignedCourseName ? (
+                  <div style={{ backgroundColor: "#f0fdf4", border: "2px solid #16a34a", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
+                    <p style={{ fontWeight: "700", color: "#15803d", margin: "0 0 4px" }}>Assigned course</p>
+                    <p style={{ margin: 0, fontSize: "18px", fontWeight: "800" }}>{assignedCourseName}</p>
+                  </div>
+                ) : (
+                  <div style={{ marginBottom: "16px" }}>
+                    <AssignCoursePanel
+                      studentId={student.id}
+                      studentName={student.full_name}
+                      rankingId={placementRankingId}
+                      preferredCourseIds={preferredCourseIds}
+                      courses={courses}
+                      examScoreByCourseId={Object.fromEntries(
+                        assessments.map(a => [a.course_id, a.score])
+                      )}
+                      onAssigned={() => { void load() }}
+                    />
+                  </div>
+                )}
+                <p style={{ fontWeight: "700", margin: "0 0 12px" }}>Preferred course scores</p>
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "16px" }}>
+                  {preferredScores.map((a, i) => {
+                    const passed = isPassingScore(a.score, a.total_items)
+                    return (
+                      <div
+                        key={a.id}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          padding: "14px 16px",
+                          borderRadius: "10px",
+                          backgroundColor: "#f9fafb",
+                          border: "1px solid #e5e7eb",
+                        }}
+                      >
+                        <p style={{ margin: 0, fontWeight: "700" }}>#{i + 1} {a.courses?.course_name}</p>
+                        <span
+                          style={{
+                            fontSize: "12px",
+                            fontWeight: "600",
+                            padding: "4px 10px",
+                            borderRadius: "12px",
+                            backgroundColor: passed ? "#dcfce7" : "#fef2f2",
+                            color: passed ? "#16a34a" : "#dc2626",
+                          }}
+                        >
+                          {a.score}/{a.total_items || QUESTIONS_PER_TRACK} — {passed ? "Passed" : "Failed"}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowRecommendations(true)}
+                  style={{
+                    padding: "10px 20px",
+                    backgroundColor: "#2563eb",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    fontWeight: "600",
+                  }}
+                >
+                  View exam score breakdown
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {showRecommendations && top3.length > 0 && (
+        <div
+          onClick={e => {
+            if (e.target === e.currentTarget) setShowRecommendations(false)
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0,0,0,0.65)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1100,
+            padding: "20px",
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "white",
+              borderRadius: "16px",
+              width: "100%",
+              maxWidth: "480px",
+              padding: "28px",
+              boxShadow: "0 24px 64px rgba(0,0,0,0.35)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px" }}>
+              <div>
+                <h3 style={{ fontWeight: "800", fontSize: "18px", margin: "0 0 4px" }}>
+                  Top 3 recommended courses
+                </h3>
+                <p style={{ color: "#6b7280", fontSize: "13px", margin: 0 }}>
+                  Based on highest scores across different courses
+                </p>
+              </div>
+              <button
+                onClick={() => setShowRecommendations(false)}
+                style={{
+                  background: "none",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: "8px",
+                  width: "32px",
+                  height: "32px",
+                  cursor: "pointer",
+                  color: "#6b7280",
+                }}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              {top3.map((r, i) => (
+                <div
+                  key={r.course_id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "14px",
+                    padding: "14px 16px",
+                    borderRadius: "10px",
+                    backgroundColor: i === 0 ? "#fffbeb" : "#f9fafb",
+                    border: `1px solid ${i === 0 ? "#fcd34d" : "#e5e7eb"}`,
+                  }}
+                >
+                  <span
+                    style={{
+                      fontWeight: "800",
+                      fontSize: "16px",
+                      color: i === 0 ? "#d97706" : "#6b7280",
+                      minWidth: "28px",
+                    }}
+                  >
+                    #{r.rank}
+                  </span>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontWeight: "700", margin: 0 }}>{r.course_name}</p>
+                  </div>
+                  <p style={{ fontWeight: "800", color: "#2563eb", margin: 0 }}>
+                    {r.score} / {QUESTIONS_PER_TRACK}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowRecommendations(false)}
+              style={{
+                width: "100%",
+                marginTop: "20px",
+                padding: "12px",
+                backgroundColor: "#111827",
+                color: "white",
+                border: "none",
+                borderRadius: "8px",
+                cursor: "pointer",
+                fontWeight: "600",
+              }}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 
-function RankingsTable({ rankings }: { rankings: RankingResult[] }) {
-  return (
-    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-      <thead>
-        <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
-          {["Course", "Score", "Rank", "Capacity", "Status"].map(h => (
-            <th key={h} style={{ textAlign: "left", padding: "8px 12px", color: "#6b7280", fontWeight: "600" }}>{h}</th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {rankings.map((r, i) => (
-          <tr key={r.id} style={{ borderBottom: "1px solid #f3f4f6", backgroundColor: i % 2 === 0 ? "white" : "#f9fafb" }}>
-            <td style={{ padding: "9px 12px", fontWeight: "500" }}>{r.courses?.course_name}</td>
-            <td style={{ padding: "9px 12px", fontWeight: "700", color: "#2563eb" }}>{r.score}</td>
-            <td style={{ padding: "9px 12px", fontWeight: "700" }}>#{r.rank}</td>
-            <td style={{ padding: "9px 12px", color: "#6b7280" }}>{r.courses?.capacity || 70} slots</td>
-            <td style={{ padding: "9px 12px" }}>
-              <span style={{ backgroundColor: r.status === "included" ? "#dcfce7" : "#fef3c7", color: r.status === "included" ? "#16a34a" : "#92400e", padding: "4px 12px", borderRadius: "20px", fontSize: "11px", fontWeight: "600" }}>
-                {r.status === "included" ? "Qualified" : "Waitlist"}
-              </span>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  )
+const btnPrint: React.CSSProperties = {
+  padding: "8px 16px",
+  backgroundColor: "#2563eb",
+  color: "white",
+  border: "none",
+  borderRadius: "8px",
+  cursor: "pointer",
+  fontWeight: "600",
+  fontSize: "13px",
 }
-
-const btnPrint: React.CSSProperties = { padding: "8px 16px", backgroundColor: "#2563eb", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px" }

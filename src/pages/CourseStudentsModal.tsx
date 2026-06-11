@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import { supabase } from "../supabaseClient"
+import { getRankingStatusLabel, getRankingStatusStyle } from "../utils/trackRanking"
 
 interface Props {
   course: {
@@ -26,7 +27,7 @@ interface StudentRanking {
 export default function CourseStudentsModal({ course, onClose }: Props) {
   const [students, setStudents] = useState<StudentRanking[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<"all" | "included" | "waitlist">("all")
+  const [filter, setFilter] = useState<"all" | "included" | "waitlist" | "rejected">("all")
   const [search, setSearch] = useState("")
 
   useEffect(() => {
@@ -56,14 +57,15 @@ export default function CourseStudentsModal({ course, onClose }: Props) {
     return matchFilter && matchSearch
   })
 
-  const included = students.filter(s => s.status === "included").length
+  const passed = students.filter(s => s.status === "included").length
   const waitlist = students.filter(s => s.status === "waitlist").length
+  const rejected = students.filter(s => s.status === "rejected").length
 
   const exportCSV = () => {
     const csv = [
-      "Rank,Full Name,LRN,School Year,Phone,Score,Status",
+      "Rank,Full Name,LRN,School Year,Phone,Score,Competency",
       ...filtered.map(s =>
-        `${s.rank},${s.students?.full_name || ""},${s.students?.lrn || ""},${s.students?.school_year || ""},${s.students?.phone_number || ""},${s.score},${s.status}`
+        `${s.rank},${s.students?.full_name || ""},${s.students?.lrn || ""},${s.students?.school_year || ""},${s.students?.phone_number || ""},${s.score},${getRankingStatusLabel(s.status)}`
       )
     ].join("\n")
     const a = document.createElement("a")
@@ -87,9 +89,9 @@ export default function CourseStudentsModal({ course, onClose }: Props) {
             </h2>
             <p style={{ color: "#6b7280", fontSize: "13px", margin: 0 }}>
               Capacity: {course.capacity} slots &nbsp;•&nbsp;
-              <span style={{ color: "#16a34a", fontWeight: "600" }}>{included} Qualified</span> &nbsp;•&nbsp;
+              <span style={{ color: "#16a34a", fontWeight: "600" }}>{passed} High Competency</span> &nbsp;•&nbsp;
               <span style={{ color: "#f59e0b", fontWeight: "600" }}>{waitlist} Waitlist</span> &nbsp;•&nbsp;
-              <span style={{ color: "#2563eb", fontWeight: "600" }}>{course.capacity - included} Available</span>
+              <span style={{ color: "#dc2626", fontWeight: "600" }}>{rejected} Rejected</span>
             </p>
           </div>
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
@@ -114,31 +116,15 @@ export default function CourseStudentsModal({ course, onClose }: Props) {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "16px" }}>
             {[
               { label: "Total", value: students.length, color: "#2563eb" },
-              { label: "Qualified", value: included, color: "#16a34a" },
+              { label: "High Competency", value: passed, color: "#16a34a" },
               { label: "Waitlist", value: waitlist, color: "#f59e0b" },
-              { label: "Available", value: course.capacity - included, color: "#7c3aed" },
+              { label: "Rejected", value: rejected, color: "#dc2626" },
             ].map(stat => (
               <div key={stat.label} style={{ backgroundColor: "#f8fafc", borderRadius: "10px", padding: "14px", textAlign: "center", border: "1px solid #e5e7eb" }}>
                 <p style={{ fontSize: "22px", fontWeight: "800", margin: "0 0 2px", color: stat.color }}>{stat.value}</p>
                 <p style={{ fontSize: "12px", color: "#6b7280", margin: 0 }}>{stat.label}</p>
               </div>
             ))}
-          </div>
-
-          {/* Capacity Bar */}
-          <div style={{ marginBottom: "16px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
-              <span style={{ fontSize: "13px", color: "#6b7280" }}>Enrollment Progress</span>
-              <span style={{ fontSize: "13px", fontWeight: "700" }}>{included} / {course.capacity} ({Math.round((included / course.capacity) * 100)}%)</span>
-            </div>
-            <div style={{ backgroundColor: "#e5e7eb", borderRadius: "6px", height: "10px" }}>
-              <div style={{
-                backgroundColor: included / course.capacity >= 0.9 ? "#dc2626" : included / course.capacity >= 0.6 ? "#f59e0b" : "#16a34a",
-                height: "10px", borderRadius: "6px",
-                width: `${Math.min((included / course.capacity) * 100, 100)}%`,
-                transition: "width 0.5s"
-              }} />
-            </div>
           </div>
 
           {/* Search + Filter */}
@@ -150,7 +136,7 @@ export default function CourseStudentsModal({ course, onClose }: Props) {
               style={{ flex: 1, minWidth: "200px", padding: "9px 14px", borderRadius: "8px", border: "1px solid #e5e7eb", fontSize: "14px", outline: "none" }}
             />
             <div style={{ display: "flex", gap: "4px", backgroundColor: "#f3f4f6", padding: "4px", borderRadius: "8px" }}>
-              {(["all", "included", "waitlist"] as const).map(f => (
+              {(["all", "included", "waitlist", "rejected"] as const).map(f => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
@@ -159,13 +145,19 @@ export default function CourseStudentsModal({ course, onClose }: Props) {
                     cursor: "pointer", fontWeight: "600", fontSize: "13px",
                     backgroundColor: filter === f ? "white" : "transparent",
                     color: filter === f
-                      ? f === "included" ? "#16a34a" : f === "waitlist" ? "#f59e0b" : "#111827"
+                      ? f === "included" ? "#16a34a" : f === "waitlist" ? "#f59e0b" : f === "rejected" ? "#dc2626" : "#111827"
                       : "#6b7280",
                     boxShadow: filter === f ? "0 1px 4px rgba(0,0,0,0.08)" : "none",
                     textTransform: "capitalize"
                   }}
                 >
-                  {f === "all" ? `All (${students.length})` : f === "included" ? `Qualified (${included})` : `Waitlist (${waitlist})`}
+                  {f === "all"
+                    ? `All (${students.length})`
+                    : f === "included"
+                      ? `High Competency (${passed})`
+                      : f === "waitlist"
+                        ? `Waitlist (${waitlist})`
+                        : `Rejected (${rejected})`}
                 </button>
               ))}
             </div>
@@ -186,7 +178,7 @@ export default function CourseStudentsModal({ course, onClose }: Props) {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
               <thead>
                 <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
-                  {["Rank", "Full Name", "LRN", "School Year", "Score", "Status"].map(h => (
+                  {["Rank", "Full Name", "LRN", "School Year", "Score", "Competency"].map(h => (
                     <th key={h} style={{ textAlign: "left", padding: "9px 12px", color: "#6b7280", fontWeight: "600" }}>{h}</th>
                   ))}
                 </tr>
@@ -210,11 +202,10 @@ export default function CourseStudentsModal({ course, onClose }: Props) {
                     </td>
                     <td style={{ padding: "10px 12px" }}>
                       <span style={{
-                        backgroundColor: s.status === "included" ? "#dcfce7" : "#fef3c7",
-                        color: s.status === "included" ? "#16a34a" : "#92400e",
-                        padding: "3px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "600"
+                        ...getRankingStatusStyle(s.status),
+                        padding: "3px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "700"
                       }}>
-                        {s.status === "included" ? "Qualified" : "Waitlist"}
+                        {getRankingStatusLabel(s.status)}
                       </span>
                     </td>
                   </tr>

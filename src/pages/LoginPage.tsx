@@ -16,7 +16,6 @@ export default function LoginPage({ onLogin }: Props) {
   const [fullName, setFullName] = useState("")
   const [studentLRN, setStudentLRN] = useState("")
   const [schoolYear, setSchoolYear] = useState("")
-  const [phoneNumber, setPhoneNumber] = useState("")
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
@@ -24,7 +23,6 @@ export default function LoginPage({ onLogin }: Props) {
     fullName?: string
     studentLRN?: string
     schoolYear?: string
-    phoneNumber?: string
   }>({})
   const [showSignupSuccess, setShowSignupSuccess] = useState(false)
 
@@ -62,20 +60,6 @@ export default function LoginPage({ onLogin }: Props) {
     setSchoolYear(val)
     if (errors.schoolYear) {
       setErrors(prev => ({ ...prev, schoolYear: undefined }))
-    }
-  }
-
-  const handlePhoneNumberChange = (val: string) => {
-    // Restrict input to digits only and max 11 characters
-    if (/^\d*$/.test(val) && val.length <= 11) {
-      // Enforce starting with 09
-      if (val.length === 1 && val !== "0") return
-      if (val.length >= 2 && !val.startsWith("09")) return
-
-      setPhoneNumber(val)
-      if (errors.phoneNumber) {
-        setErrors(prev => ({ ...prev, phoneNumber: undefined }))
-      }
     }
   }
 
@@ -141,12 +125,6 @@ export default function LoginPage({ onLogin }: Props) {
       newErrors.schoolYear = "Please select your school year."
     }
 
-    if (!phoneNumber) {
-      newErrors.phoneNumber = "Phone number is required."
-    } else if (!/^09\d{9}$/.test(phoneNumber)) {
-      newErrors.phoneNumber = "Phone number must be exactly 11 digits and start with 09."
-    }
-
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors)
       return
@@ -172,7 +150,7 @@ export default function LoginPage({ onLogin }: Props) {
         full_name: fullName.trim(),
         lrn: studentLRN.trim(),
         school_year: schoolYear,
-        phone_number: phoneNumber,
+        phone_number: "",
       }])
       .select("id, full_name")
       .single()
@@ -187,7 +165,6 @@ export default function LoginPage({ onLogin }: Props) {
     const registeredLRN = studentLRN.trim()
     setFullName("")
     setSchoolYear("")
-    setPhoneNumber("")
     setStudentLRN(registeredLRN)
     setStudentMode("login")
     setShowSignupSuccess(true)
@@ -367,27 +344,6 @@ export default function LoginPage({ onLogin }: Props) {
                   {errors.schoolYear}
                 </p>
               )}
-            </div>
-            <div>
-              <label style={{ fontWeight: "600", fontSize: "14px" }}>Phone Number</label>
-              <input
-                placeholder="e.g., 09171234567"
-                value={phoneNumber}
-                onChange={(e) => handlePhoneNumberChange(e.target.value)}
-                style={{
-                  ...inputStyle,
-                  borderColor: errors.phoneNumber ? "#dc2626" : "#e5e7eb",
-                  backgroundColor: errors.phoneNumber ? "#fef2f2" : "#f9fafb",
-                }}
-              />
-              {errors.phoneNumber && (
-                <p style={{ color: "#dc2626", fontSize: "12px", marginTop: "4px", fontWeight: "500" }}>
-                  {errors.phoneNumber}
-                </p>
-              )}
-              <p style={{ fontSize: "12px", color: "#6b7280", marginTop: "4px" }}>
-                Enter exactly 11 digit mobile number starting with 09 (for SMS results)
-              </p>
             </div>
             <button
               onClick={handleStudentSignup}

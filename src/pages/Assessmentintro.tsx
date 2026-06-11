@@ -35,7 +35,7 @@ export default function AssessmentIntro({
     <div style={{ minHeight: "100vh", backgroundColor: "#f3f4f6", width: "100%" }}>
 
       {/* Header */}
-      <div style={{ backgroundColor: "white", padding: "16px 32px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #e5e7eb" }}>
+      <div className="intro-header">
         <div>
           <h2 style={{ margin: 0, fontWeight: "700", fontSize: "18px" }}>TECHNO-VOC</h2>
           <p style={{ margin: 0, fontSize: "13px", color: "#6b7280" }}>Welcome, {studentName}</p>
@@ -43,8 +43,8 @@ export default function AssessmentIntro({
         <button onClick={onLogout} style={btnOutline}>Logout</button>
       </div>
 
-      <div style={{ display: "flex", justifyContent: "center", padding: "40px 20px" }}>
-        <div style={{ backgroundColor: "white", borderRadius: "16px", padding: "40px", width: "100%", maxWidth: "700px", boxShadow: "0 2px 16px rgba(0,0,0,0.06)" }}>
+      <div className="intro-container">
+        <div className="intro-card">
 
           <h2 style={{ fontWeight: "700", fontSize: "20px", margin: "0 0 8px" }}>TVE Strand Assessment</h2>
           <p style={{ color: "#6b7280", margin: "0 0 24px", fontSize: "14px" }}>

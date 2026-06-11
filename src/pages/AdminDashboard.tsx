@@ -72,16 +72,7 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "#f3f4f6", width: "100%", boxSizing: "border-box" }}>
-      <div
-        style={{
-          backgroundColor: "white",
-          padding: "16px 32px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          borderBottom: "1px solid #e5e7eb",
-        }}
-      >
+      <div className="admin-header">
         <div>
           <h2 style={{ margin: 0, fontSize: "18px", fontWeight: "700" }}>TECHNO-VOC Admin Dashboard</h2>
           <p style={{ margin: 0, fontSize: "13px", color: "#6b7280" }}>Welcome, {adminName}</p>
@@ -101,16 +92,7 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
         </button>
       </div>
 
-      <div
-        style={{
-          backgroundColor: "white",
-          padding: "8px 32px",
-          display: "flex",
-          gap: "4px",
-          borderBottom: "1px solid #e5e7eb",
-          flexWrap: "wrap",
-        }}
-      >
+      <div className="admin-tabs">
         {tabs.map(tab => (
           <button
             key={tab.key}
@@ -131,7 +113,7 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
         ))}
       </div>
 
-      <div style={{ padding: "32px 40px", width: "100%", boxSizing: "border-box" }}>
+      <div className="admin-content">
         {activeTab === "overview" && <OverviewTab />}
         {activeTab === "courses" && <CoursesTab />}
         {activeTab === "results" && <ResultsTab />}

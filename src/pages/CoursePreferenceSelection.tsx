@@ -42,7 +42,7 @@ export default function CoursePreferenceSelection({
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "#f3f4f6", width: "100%" }}>
-      <div style={{ backgroundColor: "white", padding: "16px 32px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #e5e7eb" }}>
+      <div className="intro-header">
         <div>
           <h2 style={{ margin: 0, fontWeight: "700", fontSize: "18px" }}>TECHNO-VOC</h2>
           <p style={{ margin: 0, fontSize: "13px", color: "#6b7280" }}>Welcome, {studentName}</p>
@@ -50,8 +50,8 @@ export default function CoursePreferenceSelection({
         <button onClick={onLogout} style={btnOutline}>Logout</button>
       </div>
 
-      <div style={{ display: "flex", justifyContent: "center", padding: "40px 20px" }}>
-        <div style={{ backgroundColor: "white", borderRadius: "16px", padding: "36px", width: "100%", maxWidth: "720px", boxShadow: "0 2px 16px rgba(0,0,0,0.06)" }}>
+      <div className="intro-container">
+        <div className="intro-card">
           <h2 style={{ fontWeight: "700", fontSize: "20px", margin: "0 0 8px" }}>Select Your 3 Preferred Courses</h2>
           <p style={{ color: "#6b7280", margin: "0 0 24px", fontSize: "14px", lineHeight: 1.5 }}>
             Choose exactly three courses you are most interested in, in order of preference (1st choice first). You will take the full assessment after this step.
@@ -83,7 +83,7 @@ export default function CoursePreferenceSelection({
           {loading ? (
             <p style={{ color: "#6b7280", textAlign: "center", padding: "24px 0" }}>Loading courses...</p>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "10px", marginBottom: "24px" }}>
+            <div className="courses-grid">
               {courses.map(course => {
                 const isSelected = selected.includes(course.id)
                 const rank = selected.indexOf(course.id) + 1

@@ -42,7 +42,7 @@ export default function AdminLoginPage({ onLogin }: Props) {
 
   return (
     <div style={containerStyle}>
-      <div style={cardStyle}>
+      <div className="login-card" style={cardStyle}>
         <div style={{ display: "flex", justifyContent: "center", marginBottom: "16px" }}>
           <div style={{
             width: "100px", height: "100px", borderRadius: "50%",

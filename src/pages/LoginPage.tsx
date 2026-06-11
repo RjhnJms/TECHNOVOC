@@ -177,7 +177,7 @@ export default function LoginPage({ onLogin }: Props) {
 
   return (
     <div style={containerStyle}>
-      <div style={cardStyle}>
+      <div className="login-card" style={cardStyle}>
 
         {/* Logo */}
         <div style={{ display: "flex", justifyContent: "center", marginBottom: "16px" }}>

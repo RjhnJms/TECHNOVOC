@@ -127,19 +127,8 @@ export default function AssessmentQuestion({
     <div style={{ minHeight: "100vh", backgroundColor: "#f1f3f4", width: "100%" }}>
 
       {/* ── Header ── */}
-      <div style={{
-        backgroundColor: "white",
-        padding: "12px 28px",
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        borderBottom: "1px solid #e0e0e0",
-        position: "sticky",
-        top: 0,
-        zIndex: 10,
-        boxShadow: "0 1px 4px rgba(0,0,0,0.08)"
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+      <div className="assessment-header">
+        <div className="assessment-header-left">
           <div>
             <h1 style={{ margin: 0, fontWeight: "700", fontSize: "16px", color: "#1a1a1a" }}>
               TECHNO-VOC Assessment
@@ -150,7 +139,7 @@ export default function AssessmentQuestion({
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+        <div className="assessment-header-right">
           {/* Timer */}
           {assessmentEndTime && (
             <div style={{
@@ -191,10 +180,10 @@ export default function AssessmentQuestion({
       </div>
 
       {/* ── Body ── */}
-      <div ref={topRef} style={{ display: "flex", justifyContent: "center", padding: "28px 16px", gap: "24px", maxWidth: "1140px", margin: "0 auto" }}>
+      <div ref={topRef} className="assessment-body">
 
         {/* ── Left: Form Questions ── */}
-        <div style={{ flex: "1 1 680px", minWidth: 0 }}>
+        <div className="assessment-left-panel">
 
           {/* Section header card */}
           <div style={{
@@ -235,18 +224,13 @@ export default function AssessmentQuestion({
               <div
                 key={q.id}
                 id={`q-${globalIdx}`}
+                className="question-card"
                 style={{
-                  backgroundColor: "white",
-                  borderRadius: "8px",
-                  padding: "24px 28px",
-                  marginBottom: "12px",
-                  boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
                   borderLeft: isSkipped
                     ? "4px solid #e37400"
                     : isAnswered
                       ? "4px solid #1e8e3e"
                       : "4px solid transparent",
-                  transition: "border-color 0.2s"
                 }}
               >
                 {/* Question number & badges */}
@@ -284,7 +268,7 @@ export default function AssessmentQuestion({
                 </div>
 
                 {/* Answer options */}
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginLeft: "36px" }}>
+                <div className="question-options-container">
                   {options.map((opt, oi) => {
                     const isSelected = selected === opt.originalLabel
                     return (
@@ -394,7 +378,7 @@ export default function AssessmentQuestion({
         </div>
 
         {/* ── Right: Sticky Sidebar ── */}
-        <div style={{ flex: "0 0 280px", minWidth: "260px" }}>
+        <div className="assessment-right-panel">
           <div style={{
             position: "sticky",
             top: "80px",

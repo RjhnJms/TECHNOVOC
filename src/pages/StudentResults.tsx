@@ -149,7 +149,7 @@ export default function StudentResults({ studentId, studentName, onLogout, onRet
         onLogout={onLogout}
       />
 
-      <div style={{ padding: "32px 40px", maxWidth: "960px", margin: "0 auto", boxSizing: "border-box" as const }}>
+      <div className="admin-content" style={{ maxWidth: "960px", margin: "0 auto" }}>
         {loading ? (
           <LoadingState />
         ) : assessments.length === 0 ? (
@@ -190,7 +190,7 @@ function ResultsHeader({ studentName, onPrint, onLogout }: {
   onLogout: () => void
 }) {
   return (
-    <div style={{ backgroundColor: "white", padding: "16px 32px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #e5e7eb" }}>
+    <div className="intro-header">
       <div>
         <h2 style={{ margin: 0, fontWeight: "700", fontSize: "18px" }}>TECHNO-VOC</h2>
         <p style={{ margin: 0, fontSize: "13px", color: "#6b7280" }}>Welcome, {studentName}</p>
@@ -240,7 +240,7 @@ function ResultBanner({ totalScore, totalItems, takenAt }: {
 }) {
   return (
     <>
-      <div style={{ backgroundColor: "#f0fdf4", border: "2px solid #16a34a", borderRadius: "16px", padding: "28px 32px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px", flexWrap: "wrap", gap: "20px" }}>
+      <div className="result-banner-card">
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "6px" }}>
             <span style={{ fontSize: "36px" }}>🎉</span>
@@ -253,7 +253,7 @@ function ResultBanner({ totalScore, totalItems, takenAt }: {
           </p>
           <p style={{ color: "#9ca3af", fontSize: "13px", margin: 0 }}>Taken: {takenAt}</p>
         </div>
-        <div style={{ display: "flex", gap: "12px" }}>
+        <div className="stats-container">
           {[
             { label: "Total Score", value: totalScore, color: "#2563eb" },
             { label: "Out of", value: totalItems, color: "#6b7280" },
@@ -394,44 +394,46 @@ function ScoresTable({ assessments, totalScore, totalItems }: {
   return (
     <div style={{ backgroundColor: "white", borderRadius: "16px", padding: "24px", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
       <h3 style={{ fontWeight: "700", fontSize: "16px", margin: "0 0 16px" }}>Score Breakdown by Course</h3>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
-        <thead>
-          <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
-            {["Course", "Score", "Out of", "Competency"].map(h => (
-              <th key={h} style={{ textAlign: "left", padding: "10px 12px", color: "#6b7280", fontWeight: "600" }}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {assessments.map((a, i) => (
-            <tr key={a.id} style={{ borderBottom: "1px solid #f3f4f6", backgroundColor: i % 2 === 0 ? "white" : "#f9fafb" }}>
-              <td style={{ padding: "12px", fontWeight: "500" }}>{a.courses?.course_name}</td>
-              <td style={{ padding: "12px", fontWeight: "700", color: "#2563eb" }}>{a.score}</td>
-              <td style={{ padding: "12px", color: "#6b7280" }}>{a.total_items}</td>
-              <td style={{ padding: "12px" }}>
-                <span style={{
-                  backgroundColor: getCompetencyLevel(a.score, a.total_items) === "High" ? "#dcfce7" : "#fef2f2",
-                  color: getCompetencyLevel(a.score, a.total_items) === "High" ? "#16a34a" : "#dc2626",
-                  padding: "3px 12px",
-                  borderRadius: "20px",
-                  fontSize: "12px",
-                  fontWeight: "700",
-                }}>
-                  {getCompetencyLevel(a.score, a.total_items)} Competency
-                </span>
-              </td>
+      <div className="table-responsive">
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
+          <thead>
+            <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
+              {["Course", "Score", "Out of", "Competency"].map(h => (
+                <th key={h} style={{ textAlign: "left", padding: "10px 12px", color: "#6b7280", fontWeight: "600" }}>{h}</th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-        <tfoot>
-          <tr style={{ borderTop: "2px solid #e5e7eb", backgroundColor: "#f8fafc" }}>
-            <td style={{ padding: "12px", fontWeight: "700" }}>OVERALL TOTAL</td>
-            <td style={{ padding: "12px", fontWeight: "800", color: "#2563eb", fontSize: "16px" }}>{totalScore}</td>
-            <td style={{ padding: "12px", fontWeight: "700", color: "#6b7280" }}>{totalItems}</td>
-            <td style={{ padding: "12px" }} />
-          </tr>
-        </tfoot>
-      </table>
+          </thead>
+          <tbody>
+            {assessments.map((a, i) => (
+              <tr key={a.id} style={{ borderBottom: "1px solid #f3f4f6", backgroundColor: i % 2 === 0 ? "white" : "#f9fafb" }}>
+                <td style={{ padding: "12px", fontWeight: "500" }}>{a.courses?.course_name}</td>
+                <td style={{ padding: "12px", fontWeight: "700", color: "#2563eb" }}>{a.score}</td>
+                <td style={{ padding: "12px", color: "#6b7280" }}>{a.total_items}</td>
+                <td style={{ padding: "12px" }}>
+                  <span style={{
+                    backgroundColor: getCompetencyLevel(a.score, a.total_items) === "High" ? "#dcfce7" : "#fef2f2",
+                    color: getCompetencyLevel(a.score, a.total_items) === "High" ? "#16a34a" : "#dc2626",
+                    padding: "3px 12px",
+                    borderRadius: "20px",
+                    fontSize: "12px",
+                    fontWeight: "700",
+                  }}>
+                    {getCompetencyLevel(a.score, a.total_items)} Competency
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr style={{ borderTop: "2px solid #e5e7eb", backgroundColor: "#f8fafc" }}>
+              <td style={{ padding: "12px", fontWeight: "700" }}>OVERALL TOTAL</td>
+              <td style={{ padding: "12px", fontWeight: "800", color: "#2563eb", fontSize: "16px" }}>{totalScore}</td>
+              <td style={{ padding: "12px", fontWeight: "700", color: "#6b7280" }}>{totalItems}</td>
+              <td style={{ padding: "12px" }} />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </div>
   )
 }
@@ -440,37 +442,39 @@ function RankingsTable({ rankings }: { rankings: RankingResult[] }) {
   return (
     <div style={{ backgroundColor: "white", borderRadius: "16px", padding: "24px", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
       <h3 style={{ fontWeight: "700", fontSize: "16px", margin: "0 0 16px" }}>Your Top 3 Recommendations</h3>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
-        <thead>
-          <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
-            {["Course", "Score", "Recommendation", "Competency"].map(h => (
-              <th key={h} style={{ textAlign: "left", padding: "10px 12px", color: "#6b7280", fontWeight: "600" }}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rankings.map((r, i) => (
-            <tr key={r.id} style={{ borderBottom: "1px solid #f3f4f6", backgroundColor: i % 2 === 0 ? "white" : "#f9fafb" }}>
-              <td style={{ padding: "12px", fontWeight: "500" }}>{r.courses?.course_name}</td>
-              <td style={{ padding: "12px", fontWeight: "700", color: "#2563eb" }}>
-                {r.score} / {QUESTIONS_PER_TRACK}
-              </td>
-              <td style={{ padding: "12px", fontWeight: "700" }}>#{r.rank}</td>
-              <td style={{ padding: "12px" }}>
-                <span style={{
-                  ...getRankingStatusStyle(r.status),
-                  padding: "3px 12px",
-                  borderRadius: "20px",
-                  fontSize: "12px",
-                  fontWeight: "700",
-                }}>
-                  {getRankingStatusLabel(r.status)}
-                </span>
-              </td>
+      <div className="table-responsive">
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
+          <thead>
+            <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
+              {["Course", "Score", "Recommendation", "Competency"].map(h => (
+                <th key={h} style={{ textAlign: "left", padding: "10px 12px", color: "#6b7280", fontWeight: "600" }}>{h}</th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rankings.map((r, i) => (
+              <tr key={r.id} style={{ borderBottom: "1px solid #f3f4f6", backgroundColor: i % 2 === 0 ? "white" : "#f9fafb" }}>
+                <td style={{ padding: "12px", fontWeight: "500" }}>{r.courses?.course_name}</td>
+                <td style={{ padding: "12px", fontWeight: "700", color: "#2563eb" }}>
+                  {r.score} / {QUESTIONS_PER_TRACK}
+                </td>
+                <td style={{ padding: "12px", fontWeight: "700" }}>#{r.rank}</td>
+                <td style={{ padding: "12px" }}>
+                  <span style={{
+                    ...getRankingStatusStyle(r.status),
+                    padding: "3px 12px",
+                    borderRadius: "20px",
+                    fontSize: "12px",
+                    fontWeight: "700",
+                  }}>
+                    {getRankingStatusLabel(r.status)}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

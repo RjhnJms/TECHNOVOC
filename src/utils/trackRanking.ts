@@ -29,31 +29,39 @@ export function computePercentileRank(score: number, allScores: number[]): numbe
   return Math.round((below / allScores.length) * 100)
 }
 
-export function getRankingStatusLabel(status: string): string {
+export function getRankingStatusLabel(status: string, score?: number): string {
+  const isHigh = score !== undefined ? score >= PASSING_SCORE : true
   switch (status) {
     case "included":
-      return "High Competency"
+      return isHigh ? "High Competency" : "Low Competency (Placed)"
     case "waitlist":
       return "Low Competency (Waitlist)"
     case "rejected":
       return "Low Competency (Rejected)"
     case "placement_waitlist":
       return "Pending placement"
+    case "recommended":
+      return isHigh ? "High Competency (Recommended)" : "Low Competency (Recommended)"
     default:
       return status
   }
 }
 
-export function getRankingStatusStyle(status: string): { backgroundColor: string; color: string } {
+export function getRankingStatusStyle(status: string, score?: number): { backgroundColor: string; color: string } {
+  const isHigh = score !== undefined ? score >= PASSING_SCORE : true
   switch (status) {
     case "included":
-      return { backgroundColor: "#dcfce7", color: "#16a34a" }
+      return isHigh
+        ? { backgroundColor: "#dcfce7", color: "#16a34a" }
+        : { backgroundColor: "#e0f2fe", color: "#0369a1" }
     case "waitlist":
       return { backgroundColor: "#fef3c7", color: "#92400e" }
     case "rejected":
       return { backgroundColor: "#fef2f2", color: "#dc2626" }
     case "placement_waitlist":
       return { backgroundColor: "#f3e8ff", color: "#7c3aed" }
+    case "recommended":
+      return { backgroundColor: "#f3f4f6", color: "#6b7280" }
     default:
       return { backgroundColor: "#f3f4f6", color: "#6b7280" }
   }

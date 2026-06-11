@@ -13,6 +13,9 @@ interface Props {
   preferredCourseIds: string[]
   courses: Course[]
   examScoreByCourseId: Record<string, number>
+  allowedCourseIds?: string[]
+  enrolledCountById?: Record<string, number>
+  capacityById?: Record<string, number>
   onAssigned?: () => void
   compact?: boolean
 }
@@ -24,6 +27,9 @@ export default function AssignCoursePanel({
   preferredCourseIds,
   courses,
   examScoreByCourseId,
+  allowedCourseIds,
+  enrolledCountById,
+  capacityById,
   onAssigned,
   compact = false,
 }: Props) {
@@ -31,7 +37,14 @@ export default function AssignCoursePanel({
   const [assigning, setAssigning] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const options = buildAssignableCourseOptions(courses, preferredCourseIds, examScoreByCourseId)
+  const options = buildAssignableCourseOptions(
+    courses,
+    preferredCourseIds,
+    examScoreByCourseId,
+    allowedCourseIds,
+    enrolledCountById,
+    capacityById
+  )
   const assignableCount = options.filter(o => !o.disabled).length
 
   const handleAssign = async () => {
@@ -48,7 +61,6 @@ export default function AssignCoursePanel({
     const result = await assignPlacementCourse(
       studentId,
       selectedCourseId,
-      preferredCourseIds,
       rankingId
     )
     setAssigning(false)
@@ -75,11 +87,15 @@ export default function AssignCoursePanel({
         Assign to course
       </p>
       <p style={{ color: "#6b7280", fontSize: "12px", margin: "0 0 12px", lineHeight: 1.45 }}>
-        Choose a track for this student. Their 3 preferred courses cannot be selected.
+        {allowedCourseIds
+          ? "Choose from the student's top 3 highest-scoring courses. Full courses are disabled."
+          : "Choose a track for this student. Their 3 preferred courses cannot be selected."}
       </p>
 
       {assignableCount === 0 ? (
-        <p style={{ color: "#b91c1c", fontSize: "13px", margin: 0 }}>No assignable courses available.</p>
+        <p style={{ color: "#b91c1c", fontSize: "13px", margin: 0 }}>
+          {options.length === 0 ? "No assignable courses available." : "All top-scoring courses are currently full."}
+        </p>
       ) : (
         <div style={{ display: "flex", flexDirection: compact ? "column" : "row", gap: "10px", alignItems: compact ? "stretch" : "flex-end", flexWrap: "wrap" }}>
           <div style={{ flex: 1, minWidth: "200px" }}>

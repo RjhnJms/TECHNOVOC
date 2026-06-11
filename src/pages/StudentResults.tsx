@@ -96,7 +96,7 @@ export default function StudentResults({ studentId, studentName, onLogout, onRet
           id: `computed-${i}`,
           score: c.score,
           rank: c.rank,
-          status: "included",
+          status: "recommended",
           courses: courseById[c.course_id]
             ? { course_name: courseById[c.course_id].course_name, capacity: courseById[c.course_id].capacity }
             : undefined,
@@ -331,23 +331,13 @@ function Top3Courses({
                   </p>
                   <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                     <span style={{
-                      ...getRankingStatusStyle(r.status),
-                      padding: "3px 10px",
-                      borderRadius: "20px",
-                      fontSize: "12px",
-                      fontWeight: "600",
-                    }}>
-                      {getRankingStatusLabel(r.status)}
-                    </span>
-                    <span style={{
-                      backgroundColor: getCompetencyLevel(r.score, total || QUESTIONS_PER_TRACK) === "High" ? "#dcfce7" : "#fef2f2",
-                      color: getCompetencyLevel(r.score, total || QUESTIONS_PER_TRACK) === "High" ? "#16a34a" : "#dc2626",
+                      ...getRankingStatusStyle(r.status, r.score),
                       padding: "3px 10px",
                       borderRadius: "20px",
                       fontSize: "12px",
                       fontWeight: "700",
                     }}>
-                      {getCompetencyLevel(r.score, total || QUESTIONS_PER_TRACK)} Competency
+                      {getRankingStatusLabel(r.status, r.score)}
                     </span>
                   </div>
                 </div>
@@ -461,13 +451,13 @@ function RankingsTable({ rankings }: { rankings: RankingResult[] }) {
                 <td style={{ padding: "12px", fontWeight: "700" }}>#{r.rank}</td>
                 <td style={{ padding: "12px" }}>
                   <span style={{
-                    ...getRankingStatusStyle(r.status),
+                    ...getRankingStatusStyle(r.status, r.score),
                     padding: "3px 12px",
                     borderRadius: "20px",
                     fontSize: "12px",
                     fontWeight: "700",
                   }}>
-                    {getRankingStatusLabel(r.status)}
+                    {getRankingStatusLabel(r.status, r.score)}
                   </span>
                 </td>
               </tr>

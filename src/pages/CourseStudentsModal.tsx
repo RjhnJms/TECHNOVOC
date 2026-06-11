@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { supabase } from "../supabaseClient"
-import { getRankingStatusLabel, getRankingStatusStyle } from "../utils/trackRanking"
+import { getRankingStatusLabel, getRankingStatusStyle, QUESTIONS_PER_TRACK } from "../utils/trackRanking"
 
 interface Props {
   course: {
@@ -63,9 +63,9 @@ export default function CourseStudentsModal({ course, onClose }: Props) {
 
   const exportCSV = () => {
     const csv = [
-      "Rank,Full Name,LRN,School Year,Phone,Score,Competency",
+      `Rank,Full Name,LRN,School Year,Phone,Score (/${QUESTIONS_PER_TRACK}),Competency`,
       ...filtered.map(s =>
-        `${s.rank},${s.students?.full_name || ""},${s.students?.lrn || ""},${s.students?.school_year || ""},${s.students?.phone_number || ""},${s.score},${getRankingStatusLabel(s.status)}`
+        `${s.rank},${s.students?.full_name || ""},${s.students?.lrn || ""},${s.students?.school_year || ""},${s.students?.phone_number || ""},${s.score},${getRankingStatusLabel(s.status, s.score)}`
       )
     ].join("\n")
     const a = document.createElement("a")
@@ -195,17 +195,17 @@ export default function CourseStudentsModal({ course, onClose }: Props) {
                     <td style={{ padding: "10px 12px" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                         <div style={{ backgroundColor: "#e5e7eb", borderRadius: "4px", height: "6px", width: "60px" }}>
-                        <div style={{ backgroundColor: s.score >= 75 ? "#16a34a" : "#f59e0b", height: "6px", borderRadius: "4px", width: `${Math.min(s.score, 100)}%` }} />
+                          <div style={{ backgroundColor: s.score >= 6 ? "#16a34a" : "#f59e0b", height: "6px", borderRadius: "4px", width: `${(s.score / QUESTIONS_PER_TRACK) * 100}%` }} />
                         </div>
-                        <span style={{ fontWeight: "700", color: "#2563eb" }}>{s.score}%</span>
+                        <span style={{ fontWeight: "700", color: "#2563eb" }}>{s.score} / {QUESTIONS_PER_TRACK}</span>
                       </div>
                     </td>
                     <td style={{ padding: "10px 12px" }}>
                       <span style={{
-                        ...getRankingStatusStyle(s.status),
+                        ...getRankingStatusStyle(s.status, s.score),
                         padding: "3px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "700"
                       }}>
-                        {getRankingStatusLabel(s.status)}
+                        {getRankingStatusLabel(s.status, s.score)}
                       </span>
                     </td>
                   </tr>

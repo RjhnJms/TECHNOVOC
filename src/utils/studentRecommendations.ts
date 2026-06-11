@@ -104,23 +104,32 @@ export interface AssignableCourseOption {
   disabled: boolean
 }
 
-/** Courses the admin may assign to, with exam scores shown and preferences blocked. */
+/** Courses the admin may assign to, filtered to allowed course IDs and showing slot availability. */
 export function buildAssignableCourseOptions(
   courses: { id: string; course_name: string }[],
   preferredCourseIds: string[],
-  examScoreByCourseId: Record<string, number>
+  examScoreByCourseId: Record<string, number>,
+  allowedCourseIds?: string[],
+  enrolledCountById?: Record<string, number>,
+  capacityById?: Record<string, number>
 ): AssignableCourseOption[] {
-  return courses
+  const filtered = allowedCourseIds
+    ? courses.filter(c => allowedCourseIds.includes(c.id))
+    : courses.filter(c => !preferredCourseIds.includes(c.id))
+
+  return filtered
     .map(c => {
-      const isPreferred = preferredCourseIds.includes(c.id)
       const score = examScoreByCourseId[c.id]
-      const scoreText = score !== undefined ? ` — exam score ${score}/10` : ""
+      const scoreText = score !== undefined ? ` — score ${score}/10` : ""
+      const enrolled = enrolledCountById?.[c.id] ?? 0
+      const capacity = capacityById?.[c.id] ?? 9999
+      const slotsLeft = Math.max(0, capacity - enrolled)
+      const isFull = slotsLeft === 0
+      const slotText = capacityById ? (isFull ? " — FULL" : ` — ${slotsLeft} slot${slotsLeft === 1 ? "" : "s"} left`) : ""
       return {
         id: c.id,
-        label: isPreferred
-          ? `${c.course_name} (preferred — not allowed)`
-          : `${c.course_name}${scoreText}`,
-        disabled: isPreferred,
+        label: `${c.course_name}${scoreText}${slotText}`,
+        disabled: isFull,
       }
     })
     .sort((a, b) => {
@@ -129,17 +138,20 @@ export function buildAssignableCourseOptions(
     })
 }
 
-/** Assign a placement-waitlisted student to a course outside their top 3 preferences. */
+/** Assign a placement-waitlisted student to their top-scoring available course. */
 export async function assignPlacementCourse(
   studentId: string,
   courseId: string,
-  preferredCourseIds: string[],
   rankingId?: string | null
 ): Promise<{ error: string | null }> {
-  if (preferredCourseIds.includes(courseId)) {
-    return {
-      error: "Cannot assign a student to one of their 3 preferred courses. Choose a different track.",
-    }
+  // Check course capacity before assigning
+  const [{ count: capacity }, { count: enrolled }] = await Promise.all([
+    supabase.from("courses").select("capacity", { count: "exact", head: true }).eq("id", courseId),
+    supabase.from("rankings").select("*", { count: "exact", head: true }).eq("course_id", courseId).eq("status", "included"),
+  ])
+  const slotsLeft = (capacity ?? 0) - (enrolled ?? 0)
+  if (slotsLeft <= 0) {
+    return { error: "This course has reached its capacity. Choose a different track." }
   }
 
   const { data: assessment } = await supabase

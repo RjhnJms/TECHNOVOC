@@ -43,6 +43,7 @@ export default function StudentDetailModal({ student, onClose }: Props) {
   const [preferredScores, setPreferredScores] = useState<AssessmentResult[]>([])
   const [preferredCourseIds, setPreferredCourseIds] = useState<string[]>([])
   const [top3, setTop3] = useState<Top3Item[]>([])
+  const [rankings, setRankings] = useState<any[]>([])
   const [allPreferredPassed, setAllPreferredPassed] = useState(false)
   const [placementRankingId, setPlacementRankingId] = useState<string | null>(null)
   const [assignedCourseName, setAssignedCourseName] = useState<string | null>(null)
@@ -65,8 +66,9 @@ export default function StudentDetailModal({ student, onClose }: Props) {
           .order("preference_order"),
         supabase
           .from("rankings")
-          .select("id, status, course_id, courses(course_name)")
-          .eq("student_id", student.id),
+          .select("*, courses(course_name, capacity)")
+          .eq("student_id", student.id)
+          .order("rank", { ascending: true }),
         supabase.from("courses").select("id, course_name").order("course_name"),
       ])
 
@@ -76,11 +78,11 @@ export default function StudentDetailModal({ student, onClose }: Props) {
       setPreferredCourseIds(prefIds)
       setCourses(cData.data || [])
 
-      const rankings = rData.data || []
-      const placementRow = rankings.find(r => r.status === "placement_waitlist")
+      const rankRows = rData.data || []
+      const placementRow = rankRows.find(r => r.status === "placement_waitlist")
       setPlacementRankingId(placementRow?.id ?? null)
 
-      const manualAssign = rankings.find(
+      const manualAssign = rankRows.find(
         r => r.status === "included" && r.course_id && !prefIds.includes(r.course_id)
       )
       if (manualAssign?.courses) {
@@ -120,6 +122,23 @@ export default function StudentDetailModal({ student, onClose }: Props) {
         }))
       )
 
+      if (rankRows.length > 0) {
+        setRankings(rankRows.filter(r => r.status !== "placement_waitlist" || r.course_id))
+      } else if (computed.length > 0) {
+        const courseById = Object.fromEntries((cData.data || []).map(c => [c.id, c]))
+        setRankings(computed.map((c, i) => ({
+          id: `computed-${i}`,
+          score: c.score,
+          rank: c.rank,
+          status: "recommended",
+          courses: courseById[c.course_id]
+            ? { course_name: courseById[c.course_id].course_name }
+            : undefined,
+        })))
+      } else {
+        setRankings([])
+      }
+
       setLoading(false)
   }
 
@@ -154,21 +173,21 @@ export default function StudentDetailModal({ student, onClose }: Props) {
       takenAt,
       totalScore,
       totalItems,
-      top3: top3.map(r => ({
-        course_name: r.course_name,
+      top3: rankings.map(r => ({
+        course_name: r.courses?.course_name || "",
         score: r.score,
-        total_items: QUESTIONS_PER_TRACK,
+        total_items: assessments.find(a => a.courses?.course_name === r.courses?.course_name)?.total_items,
       })),
       assessments: assessments.map(a => ({
         course_name: a.courses?.course_name || "",
         score: a.score,
         total_items: a.total_items,
       })),
-      rankings: top3.map(r => ({
-        course_name: r.course_name,
+      rankings: rankings.map(r => ({
+        course_name: r.courses?.course_name || "",
         score: r.score,
         rank: r.rank,
-        status: "included",
+        status: r.status,
       })),
     })
   }

@@ -33,11 +33,13 @@ export function printStudentResults(opts: PrintResultsOptions) {
     assessments, rankings
   } = opts
 
-  const statusLabel = (s?: string) => {
-    if (s === "included") return "High Competency"
+  const statusLabel = (s?: string, score?: number) => {
+    const isHigh = score !== undefined ? score >= 6 : true
+    if (s === "included") return isHigh ? "High Competency" : "Low Competency (Placed)"
     if (s === "waitlist") return "Low Competency (Waitlist)"
     if (s === "rejected") return "Low Competency (Rejected)"
     if (s === "placement_waitlist") return "Pending Placement"
+    if (s === "recommended") return isHigh ? "High Competency (Recommended)" : "Low Competency (Recommended)"
     return s || "—"
   }
 
@@ -46,7 +48,7 @@ export function printStudentResults(opts: PrintResultsOptions) {
       <td>#${r.rank}</td>
       <td>${r.course_name}</td>
       <td><strong>${r.score} / 10</strong></td>
-      <td>${statusLabel(r.status)}</td>
+      <td>${statusLabel(r.status, r.score)}</td>
     </tr>
   `).join("")
 

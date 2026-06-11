@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react"
 import { supabase } from "../supabaseClient"
 import AssignCoursePanel from "../components/AssignCoursePanel"
-import { Clock, Users, Search, RefreshCw, Loader2, AlertCircle } from "lucide-react"
+import { Clock, Users, Search, RefreshCw, Loader2, AlertCircle, TrendingUp } from "lucide-react"
+import { QUESTIONS_PER_TRACK } from "../utils/trackRanking"
 
 interface Student {
   id: string
@@ -16,6 +17,7 @@ interface Course {
   id: string
   course_name: string
   capacity: number
+  enrolled?: number
 }
 
 interface WaitlistEntry {
@@ -48,6 +50,7 @@ export default function WaitlistTab({ onSelectStudent }: Props) {
   const [trackWaitlist, setTrackWaitlist] = useState<WaitlistEntry[]>([])
   const [placementWaitlist, setPlacementWaitlist] = useState<PlacementEntry[]>([])
   const [courses, setCourses] = useState<Course[]>([])
+  const [enrolledCountByCourse, setEnrolledCountByCourse] = useState<Record<string, number>>({})
   const [selectedCourse, setSelectedCourse] = useState<string>("all")
   const [searchQuery, setSearchQuery] = useState("")
   const [loading, setLoading] = useState(true)
@@ -61,21 +64,31 @@ export default function WaitlistTab({ onSelectStudent }: Props) {
   const fetchData = async () => {
     setLoading(true)
     try {
-      const { data: rankData, error: rankError } = await supabase
-        .from("rankings")
-        .select("*, students(*), courses(*)")
-        .in("status", ["waitlist", "placement_waitlist"])
-        .order("score", { ascending: false })
+      const [{ data: rankData, error: rankError }, { data: courseData, error: courseError }, { data: enrolledData }] = await Promise.all([
+        supabase
+          .from("rankings")
+          .select("*, students(*), courses(*)")
+          .in("status", ["waitlist", "placement_waitlist"])
+          .order("score", { ascending: false }),
+        supabase
+          .from("courses")
+          .select("*")
+          .order("course_name"),
+        supabase
+          .from("rankings")
+          .select("course_id")
+          .eq("status", "included"),
+      ])
 
       if (rankError) throw rankError
-
-      const { data: courseData, error: courseError } = await supabase
-        .from("courses")
-        .select("*")
-        .order("course_name")
-
       if (courseError) throw courseError
 
+      // Build enrolled count per course
+      const countMap: Record<string, number> = {}
+      for (const r of enrolledData || []) {
+        if (r.course_id) countMap[r.course_id] = (countMap[r.course_id] || 0) + 1
+      }
+      setEnrolledCountByCourse(countMap)
       const typedRankings: WaitlistEntry[] = (rankData || []).map((r: {
         id: string
         student_id: string
@@ -301,12 +314,14 @@ export default function WaitlistTab({ onSelectStudent }: Props) {
 
       {/* Placement waitlist — did not pass all 3 preferred courses */}
       <div style={{ backgroundColor: "white", borderRadius: "12px", padding: "24px", border: "1px solid #e5e7eb", marginBottom: "16px" }}>
-        <p style={{ fontWeight: "700", margin: "0 0 4px", fontSize: "16px", color: "#5b21b6" }}>
-          Preferred-course placement waitlist ({filteredPlacementWaitlist.length})
-        </p>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "4px" }}>
+          <TrendingUp size={18} color="#5b21b6" />
+          <p style={{ fontWeight: "700", margin: 0, fontSize: "16px", color: "#5b21b6" }}>
+            Preferred-course placement waitlist ({filteredPlacementWaitlist.length})
+          </p>
+        </div>
         <p style={{ color: "#6b7280", fontSize: "13px", margin: "0 0 16px" }}>
-          These students did not pass (6+/10) on all 3 preferred courses. Assign each to a track that is{" "}
-          <strong>not</strong> in their top 3 preferences.
+          These students did not pass (6+/10) on all 3 preferred courses. Their <strong>top 3 highest scores</strong> are shown to help you assign them to a suitable available track.
         </p>
 
         {loading ? (
@@ -316,58 +331,127 @@ export default function WaitlistTab({ onSelectStudent }: Props) {
             No students awaiting placement.
           </p>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
-            <thead>
-              <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
-                {["Student", "LRN", "Preferred courses (cannot assign)", "Best score", "Assign to course"].map(h => (
-                  <th key={h} style={{ textAlign: "left", padding: "10px 12px", color: "#6b7280", fontWeight: "600" }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filteredPlacementWaitlist.map((w, i) => {
-                const preferredIds = w.preferredCourses.map(p => p.course_id)
-                return (
-                  <tr key={w.id} style={{ borderBottom: "1px solid #f3f4f6", backgroundColor: i % 2 === 0 ? "#faf5ff" : "white" }}>
-                    <td style={{ padding: "12px", fontWeight: "500" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            {filteredPlacementWaitlist.map((w, i) => {
+              const preferredIds = w.preferredCourses.map(p => p.course_id)
+              const scoreMap = examScoresByStudent[w.student_id] || {}
+
+              // Compute top 3 highest-scoring courses
+              const top3BestScores = Object.entries(scoreMap)
+                .map(([courseId, score]) => ({
+                  courseId,
+                  score,
+                  course: courses.find(c => c.id === courseId),
+                }))
+                .filter(e => e.course)
+                .sort((a, b) => b.score - a.score)
+                .slice(0, 3)
+
+              return (
+                <div
+                  key={w.id}
+                  style={{
+                    backgroundColor: i % 2 === 0 ? "#faf5ff" : "white",
+                    border: "1px solid #e9d5ff",
+                    borderRadius: "12px",
+                    padding: "20px",
+                  }}
+                >
+                  {/* Student header */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "8px", marginBottom: "14px" }}>
+                    <div>
                       <button
                         onClick={() => w.students && onSelectStudent(w.students)}
-                        style={{ background: "none", border: "none", color: "#2563eb", cursor: "pointer", fontWeight: "600", padding: 0, textDecoration: "underline", fontSize: "14px" }}
+                        style={{ background: "none", border: "none", color: "#2563eb", cursor: "pointer", fontWeight: "700", padding: 0, textDecoration: "underline", fontSize: "15px" }}
                       >
                         {w.students?.full_name || "—"}
                       </button>
-                    </td>
-                    <td style={{ padding: "12px", color: "#4b5563" }}>{w.students?.lrn || "—"}</td>
-                    <td style={{ padding: "12px" }}>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                        {w.preferredCourses.map(p => (
+                      <span style={{ color: "#6b7280", fontSize: "13px", marginLeft: "10px" }}>LRN: {w.students?.lrn || "—"}</span>
+                    </div>
+                    <span style={{ backgroundColor: "#f3e8ff", color: "#7c3aed", padding: "3px 10px", borderRadius: "20px", fontSize: "12px", fontWeight: "700" }}>
+                      Pending Placement
+                    </span>
+                  </div>
+
+                  {/* Preferred courses (blocked) */}
+                  <div style={{ marginBottom: "14px" }}>
+                    <p style={{ fontSize: "12px", fontWeight: "600", color: "#6b7280", margin: "0 0 6px" }}>❌ Preferred courses (failed — cannot assign):</p>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                      {w.preferredCourses.length > 0 ? w.preferredCourses.map(p => {
+                        const score = scoreMap[p.course_id]
+                        return (
                           <span
                             key={p.course_id}
-                            style={{ backgroundColor: "#ede9fe", color: "#5b21b6", padding: "2px 8px", borderRadius: "12px", fontSize: "11px", fontWeight: "600" }}
+                            style={{ backgroundColor: "#ede9fe", color: "#5b21b6", padding: "3px 10px", borderRadius: "12px", fontSize: "12px", fontWeight: "600" }}
                           >
-                            #{p.preference_order} {p.course_name}
+                            #{p.preference_order} {p.course_name}{score !== undefined ? ` (${score}/${QUESTIONS_PER_TRACK})` : ""}
                           </span>
-                        ))}
+                        )
+                      }) : <span style={{ color: "#9ca3af", fontSize: "12px" }}>No preferences set</span>}
+                    </div>
+                  </div>
+
+                  {/* Top 3 best scoring courses */}
+                  <div style={{ marginBottom: "14px" }}>
+                    <p style={{ fontSize: "12px", fontWeight: "600", color: "#15803d", margin: "0 0 6px" }}>✅ Top 3 highest scores (admin can assign here if slots available):</p>
+                    {top3BestScores.length === 0 ? (
+                      <p style={{ color: "#9ca3af", fontSize: "12px", margin: 0 }}>No exam data available.</p>
+                    ) : (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                        {top3BestScores.map(({ courseId, score, course }, idx) => {
+                          const enrolled = enrolledCountByCourse[courseId] || 0
+                          const capacity = course?.capacity ?? 0
+                          const slotsLeft = Math.max(0, capacity - enrolled)
+                          const hasSlots = slotsLeft > 0
+                          const isPreferred = preferredIds.includes(courseId)
+                          return (
+                            <div
+                              key={courseId}
+                              style={{
+                                backgroundColor: hasSlots ? "#f0fdf4" : "#fef2f2",
+                                border: `1px solid ${hasSlots ? "#86efac" : "#fca5a5"}`,
+                                borderRadius: "10px",
+                                padding: "8px 14px",
+                                minWidth: "150px",
+                              }}
+                            >
+                              <p style={{ margin: "0 0 2px", fontWeight: "700", fontSize: "13px", color: "#111827" }}>
+                                #{idx + 1} {course?.course_name}
+                              </p>
+                              <p style={{ margin: "0 0 2px", fontSize: "12px", color: "#2563eb", fontWeight: "700" }}>
+                                Score: {score}/{QUESTIONS_PER_TRACK}
+                              </p>
+                              <p style={{ margin: 0, fontSize: "11px", color: hasSlots ? "#16a34a" : "#dc2626", fontWeight: "600" }}>
+                                {hasSlots ? `${slotsLeft} slot${slotsLeft === 1 ? "" : "s"} available` : "Full — no slots"}
+                              </p>
+                              {isPreferred && (
+                                <p style={{ margin: "2px 0 0", fontSize: "10px", color: "#7c3aed", fontWeight: "600" }}>⚠ Was preferred (still assignable)</p>
+                              )}
+                            </div>
+                          )
+                        })}
                       </div>
-                    </td>
-                    <td style={{ padding: "12px", fontWeight: "700" }}>{w.score}/10</td>
-                    <td style={{ padding: "12px", minWidth: "280px" }}>
-                      <AssignCoursePanel
-                        studentId={w.student_id}
-                        studentName={w.students?.full_name || "Student"}
-                        rankingId={w.id}
-                        preferredCourseIds={preferredIds}
-                        courses={courses}
-                        examScoreByCourseId={examScoresByStudent[w.student_id] || {}}
-                        onAssigned={fetchData}
-                        compact
-                      />
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                    )}
+                  </div>
+
+                  {/* Assign panel — restricted to top 3 highest scoring courses */}
+                  <AssignCoursePanel
+                    studentId={w.student_id}
+                    studentName={w.students?.full_name || "Student"}
+                    rankingId={w.id}
+                    preferredCourseIds={preferredIds}
+                    courses={courses}
+                    examScoreByCourseId={scoreMap}
+                    allowedCourseIds={top3BestScores.map(e => e.courseId)}
+                    enrolledCountById={enrolledCountByCourse}
+                    capacityById={Object.fromEntries(courses.map(c => [c.id, c.capacity]))}
+                    onAssigned={fetchData}
+                    compact
+                  />
+                </div>
+              )
+            })}
+          </div>
         )}
       </div>
 

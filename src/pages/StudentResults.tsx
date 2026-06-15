@@ -44,7 +44,7 @@ export default function StudentResults({ studentId, studentName, onLogout, onRet
   const [studentInfo, setStudentInfo] = useState<StudentInfo>({ lrn: "", school_year: "" })
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<"scores" | "rankings">("scores")
-  const [recommendationSource, setRecommendationSource] = useState<"preferred" | "fallback" | "placement_pending">("fallback")
+  const [recommendationSource, setRecommendationSource] = useState<"preferred" | "fallback" | "placement_pending" | "assigned">("fallback")
   const [preferredCourseNames, setPreferredCourseNames] = useState<string[]>([])
 
   useEffect(() => {
@@ -80,15 +80,17 @@ export default function StudentResults({ studentId, studentName, onLogout, onRet
         preferredIds
       )
 
-      const placementPending = (rData.data || []).some(r => r.status === "placement_waitlist")
+      const placementPending = (rData.data || []).some(r => r.status === "waitlist" && !r.course_id)
       if (placementPending) {
         setRecommendationSource("placement_pending")
+      } else if (rData.data && rData.data.length === 1) {
+        setRecommendationSource("assigned")
       } else {
         setRecommendationSource(computed[0]?.fromPreferredCourses ? "preferred" : "fallback")
       }
 
       if (rData.data && rData.data.length > 0) {
-        setRankings(rData.data.filter(r => r.status !== "placement_waitlist" || r.course_id))
+        setRankings(rData.data.filter(r => !(r.status === "waitlist" && !r.course_id)))
       } else if (computed.length > 0) {
         const { data: courses } = await supabase.from("courses").select("id, course_name, capacity")
         const courseById = Object.fromEntries((courses || []).map(c => [c.id, c]))
@@ -276,7 +278,7 @@ function Top3Courses({
 }: {
   top3: RankingResult[]
   assessments: AssessmentResult[]
-  recommendationSource: "preferred" | "fallback" | "placement_pending"
+  recommendationSource: "preferred" | "fallback" | "placement_pending" | "assigned"
   preferredCourseNames: string[]
 }) {
   return (
@@ -287,11 +289,18 @@ function Top3Courses({
           ? "✅ You scored 6+/10 on all 3 preferred courses. Your top 3 recommendations are based on your preferred courses — #1 is your best match."
           : recommendationSource === "placement_pending"
             ? "⚠️ You did not score 6+/10 on all 3 preferred courses. An administrator will assign you to a suitable track."
-            : "📊 Your top 3 course recommendations are based on your highest scores across the full exam."}
+            : recommendationSource === "assigned"
+              ? "🏆 You have been successfully placed in a course track."
+              : "📊 Your top 3 course recommendations are based on your highest scores across the full exam."}
       </p>
       {recommendationSource === "preferred" && (
         <p style={{ backgroundColor: "#f0fdf4", color: "#15803d", fontSize: "12px", padding: "8px 12px", borderRadius: "8px", margin: "0 0 16px", fontWeight: "600" }}>
           🏆 High Competency on your 3 preferred courses — you qualify for these tracks!
+        </p>
+      )}
+      {recommendationSource === "assigned" && (
+        <p style={{ backgroundColor: "#f0fdf4", color: "#15803d", fontSize: "12px", padding: "8px 12px", borderRadius: "8px", margin: "0 0 16px", fontWeight: "600" }}>
+          🎉 You have been assigned to your course placement based on your preferred choices and/or scores!
         </p>
       )}
       {recommendationSource === "placement_pending" && (

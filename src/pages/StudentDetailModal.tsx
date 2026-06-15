@@ -79,7 +79,7 @@ export default function StudentDetailModal({ student, onClose }: Props) {
       setCourses(cData.data || [])
 
       const rankRows = rData.data || []
-      const placementRow = rankRows.find(r => r.status === "placement_waitlist")
+      const placementRow = rankRows.find(r => r.status === "waitlist" && !r.course_id)
       setPlacementRankingId(placementRow?.id ?? null)
 
       const manualAssign = rankRows.find(
@@ -123,7 +123,7 @@ export default function StudentDetailModal({ student, onClose }: Props) {
       )
 
       if (rankRows.length > 0) {
-        setRankings(rankRows.filter(r => r.status !== "placement_waitlist" || r.course_id))
+        setRankings(rankRows.filter(r => !(r.status === "waitlist" && !r.course_id)))
       } else if (computed.length > 0) {
         const courseById = Object.fromEntries((cData.data || []).map(c => [c.id, c]))
         setRankings(computed.map((c, i) => ({

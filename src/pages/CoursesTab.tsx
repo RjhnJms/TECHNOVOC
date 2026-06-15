@@ -2,6 +2,7 @@ import { useState, useEffect } from "react"
 import { supabase } from "../supabaseClient"
 import { BookOpen, HelpCircle, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react"
 import CourseQuestionsModal from "./CourseQuestionsModal"
+import ConfirmDialog from "../components/ConfirmDialog"
 import {
   QUESTION_POOL_SIZE_PER_TRACK,
   QUESTIONS_DRAWN_PER_TRACK,
@@ -25,6 +26,7 @@ export default function CoursesTab() {
   const [search, setSearch] = useState("")
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [questionsCourse, setQuestionsCourse] = useState<Course | null>(null)
+  const [courseToDelete, setCourseToDelete] = useState<CourseRow | null>(null)
 
   const [showAddModal, setShowAddModal] = useState(false)
   const [newCourseName, setNewCourseName] = useState("")
@@ -97,7 +99,7 @@ export default function CoursesTab() {
     fetchData()
   }
 
-  const handleDeleteCourse = async (course: CourseRow) => {
+  const handleDeleteClick = async (course: CourseRow) => {
     const { count: assessmentCount } = await supabase
       .from("assessments")
       .select("*", { count: "exact", head: true })
@@ -108,10 +110,13 @@ export default function CoursesTab() {
       return
     }
 
-    if (!confirm(
-      `Delete "${course.course_name}"?\n\nThis will also delete ${course.questionCount} question(s) linked to this course. This cannot be undone.`
-    )) return
+    setCourseToDelete(course)
+  }
 
+  const handleConfirmDelete = async () => {
+    if (!courseToDelete) return
+    const course = courseToDelete
+    setCourseToDelete(null)
     setDeletingId(course.id)
     await supabase.from("questions").delete().eq("course_id", course.id)
     await supabase.from("rankings").delete().eq("course_id", course.id)
@@ -227,8 +232,8 @@ export default function CoursesTab() {
                         </span>
                       </button>
                       <button
-                        onClick={() => handleDeleteCourse(course)}
-                        disabled={deletingId === course.id}
+                         onClick={() => handleDeleteClick(course)}
+                         disabled={deletingId === course.id}
                         style={{
                           padding: "6px 14px",
                           backgroundColor: deletingId === course.id ? "#f3f4f6" : "#fef2f2",
@@ -303,6 +308,16 @@ export default function CoursesTab() {
           onChanged={fetchData}
         />
       )}
+
+      <ConfirmDialog
+        open={!!courseToDelete}
+        title="Delete Course"
+        message={`Are you sure you want to delete "${courseToDelete?.course_name}"? This will also delete all ${courseToDelete?.questionCount ?? 0} question(s) linked to this course. This action cannot be undone.`}
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setCourseToDelete(null)}
+      />
     </div>
   )
 }

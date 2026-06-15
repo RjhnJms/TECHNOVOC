@@ -11,6 +11,7 @@ import {
   type LabCodeUsageRow,
 } from "../utils/examAccessCode"
 import { KeyRound, Loader2, RefreshCw, ShieldCheck, Copy, Check, Users } from "lucide-react"
+import ConfirmDialog from "../components/ConfirmDialog"
 
 export default function SettingsTab() {
   const [requireLabCode, setRequireLabCode] = useState(false)
@@ -24,6 +25,8 @@ export default function SettingsTab() {
   const [batchCount, setBatchCount] = useState(1)
   const [batchSize, setBatchSize] = useState(DEFAULT_BATCH_SIZE)
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
+  const [showGenerateConfirm, setShowGenerateConfirm] = useState(false)
+  const [revokeTarget, setRevokeTarget] = useState<ExamAccessCodeRow | null>(null)
 
   const loadSettings = useCallback(async () => {
     setSettingsLoading(true)
@@ -57,10 +60,14 @@ export default function SettingsTab() {
     setSavingSetting(false)
   }
 
-  const handleGenerateBatches = async () => {
+  const handleGenerateBatches = () => {
+    setShowGenerateConfirm(true)
+  }
+
+  const doGenerateBatches = async () => {
+    setShowGenerateConfirm(false)
     const count = Math.max(1, Math.min(20, batchCount))
     const size = Math.max(1, Math.min(100, batchSize))
-    if (!confirm(`Generate ${count} batch code(s)? Each code can be used by up to ${size} students.`)) return
 
     setGenerating(true)
     let failed = 0
@@ -79,14 +86,14 @@ export default function SettingsTab() {
     }
   }
 
-  const handleRevoke = async (row: ExamAccessCodeRow) => {
-    const used = row.redemption_count || 0
-    if (used > 0) {
-      if (!confirm(`This code was used by ${used} student(s). Remove it anyway? Those students cannot start without a new code.`)) return
-    } else if (!confirm("Remove this unused batch code?")) {
-      return
-    }
-    const err = await revokeBatchCode(row.id)
+  const handleRevoke = (row: ExamAccessCodeRow) => {
+    setRevokeTarget(row)
+  }
+
+  const doRevoke = async () => {
+    if (!revokeTarget) return
+    setRevokeTarget(null)
+    const err = await revokeBatchCode(revokeTarget.id)
     if (err) alert(err)
     else await loadCodes()
   }
@@ -384,6 +391,28 @@ export default function SettingsTab() {
           </table>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={showGenerateConfirm}
+        title="Generate Batch Codes"
+        message={`Generate ${Math.max(1, Math.min(20, batchCount))} batch code(s)? Each code can be used by up to ${Math.max(1, Math.min(100, batchSize))} students.`}
+        confirmLabel="Generate"
+        variant="info"
+        onConfirm={doGenerateBatches}
+        onCancel={() => setShowGenerateConfirm(false)}
+      />
+      <ConfirmDialog
+        open={revokeTarget !== null}
+        title="Remove Batch Code"
+        message={revokeTarget && (revokeTarget.redemption_count || 0) > 0
+          ? `This code was used by ${revokeTarget.redemption_count} student(s). Remove it anyway? Those students cannot start without a new code.`
+          : "Remove this unused batch code?"
+        }
+        confirmLabel="Remove"
+        variant="danger"
+        onConfirm={doRevoke}
+        onCancel={() => setRevokeTarget(null)}
+      />
     </div>
   )
 }

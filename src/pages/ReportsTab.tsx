@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react"
 import { supabase } from "../supabaseClient"
 import { Download, FileText, RefreshCw, Search } from "lucide-react"
 import { QUESTIONS_PER_TRACK, getCompetencyLevel } from "../utils/trackRanking"
+import ConfirmDialog from "../components/ConfirmDialog"
 
 interface Course {
   id: string
@@ -43,6 +44,7 @@ export default function ReportsTab() {
   const [selectedCourse, setSelectedCourse] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
   const [loading, setLoading] = useState(true)
+  const [confirmDialog, setConfirmDialog] = useState<"track" | "all" | null>(null)
 
   const fetchData = async () => {
     setLoading(true)
@@ -166,7 +168,7 @@ export default function ReportsTab() {
           </button>
           <button
             type="button"
-            onClick={exportCurrentTrack}
+            onClick={() => setConfirmDialog("track")}
             disabled={busy || !selectedCourse || courseRoster.length === 0}
             style={btnDark}
           >
@@ -175,7 +177,7 @@ export default function ReportsTab() {
           </button>
           <button
             type="button"
-            onClick={exportAllTracks}
+            onClick={() => setConfirmDialog("all")}
             disabled={busy || included.length === 0}
             style={btnDark}
           >
@@ -287,6 +289,26 @@ export default function ReportsTab() {
           If lists look outdated, click <strong>Refresh rankings</strong> in Course Management or here.
         </p>
       </div>
+
+      <ConfirmDialog
+        open={confirmDialog !== null}
+        title="Export Report"
+        message={confirmDialog === "all"
+          ? "Are you sure you want to export the final rosters for all tracks to a CSV file?"
+          : `Are you sure you want to export the final roster for "${selected?.course_name}" to a CSV file?`
+        }
+        confirmLabel="Export"
+        variant="export"
+        onConfirm={() => {
+          if (confirmDialog === "all") {
+            exportAllTracks()
+          } else if (confirmDialog === "track") {
+            exportCurrentTrack()
+          }
+          setConfirmDialog(null)
+        }}
+        onCancel={() => setConfirmDialog(null)}
+      />
     </div>
   )
 }

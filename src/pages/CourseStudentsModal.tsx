@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import { supabase } from "../supabaseClient"
 import { getRankingStatusLabel, getRankingStatusStyle, QUESTIONS_PER_TRACK } from "../utils/trackRanking"
+import ConfirmDialog from "../components/ConfirmDialog"
 
 interface Props {
   course: {
@@ -29,6 +30,7 @@ export default function CourseStudentsModal({ course, onClose }: Props) {
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<"all" | "included" | "waitlist" | "rejected">("all")
   const [search, setSearch] = useState("")
+  const [showExportConfirm, setShowExportConfirm] = useState(false)
 
   useEffect(() => {
     const loadStudents = async () => {
@@ -96,7 +98,7 @@ export default function CourseStudentsModal({ course, onClose }: Props) {
           </div>
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
             <button
-              onClick={exportCSV}
+              onClick={() => setShowExportConfirm(true)}
               style={{ padding: "8px 14px", backgroundColor: "#374151", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px" }}
             >
               ⬇ Export CSV
@@ -215,6 +217,15 @@ export default function CourseStudentsModal({ course, onClose }: Props) {
           )}
         </div>
       </div>
+      <ConfirmDialog
+        open={showExportConfirm}
+        title="Export Students CSV"
+        message={`Export ${filtered.length} student record${filtered.length === 1 ? "" : "s"} for ${course.course_name} to a CSV file?`}
+        confirmLabel="Export"
+        variant="export"
+        onConfirm={() => { setShowExportConfirm(false); exportCSV() }}
+        onCancel={() => setShowExportConfirm(false)}
+      />
     </div>
   )
 }

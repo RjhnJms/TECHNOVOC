@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react"
 import { supabase } from "../supabaseClient"
 import { Search, Trash2, Eye } from "lucide-react"
 import StudentDetailModal from "./StudentDetailModal"
+import ConfirmDialog from "../components/ConfirmDialog"
 
 interface Student {
   id: string
@@ -17,6 +18,7 @@ export default function ResultsTab() {
   const [studentSearch, setStudentSearch] = useState("")
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [confirmDialog, setConfirmDialog] = useState<{ type: "delete" | "export"; student?: Student } | null>(null)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -33,15 +35,8 @@ export default function ResultsTab() {
     fetchData()
   }, [fetchData])
 
-  const handleDeleteStudent = async (student: Student, e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (
-      !confirm(
-        `Delete "${student.full_name}"?\n\nThis will also delete their assessment results and rankings. This cannot be undone!`
-      )
-    )
-      return
-
+  const handleDeleteStudent = async (student: Student) => {
+    setConfirmDialog(null)
     setDeletingId(student.id)
     await supabase.from("exam_access_code_redemptions").delete().eq("student_id", student.id)
     await supabase.from("student_course_preferences").delete().eq("student_id", student.id)
@@ -101,7 +96,7 @@ export default function ResultsTab() {
             </p>
           </div>
           <button
-            onClick={exportStudentsCSV}
+            onClick={() => setConfirmDialog({ type: "export" })}
             style={{
               padding: "8px 16px",
               backgroundColor: "#374151",
@@ -189,7 +184,7 @@ export default function ResultsTab() {
                       </button>
                       <button
                         type="button"
-                        onClick={e => handleDeleteStudent(s, e)}
+                        onClick={e => { e.stopPropagation(); setConfirmDialog({ type: "delete", student: s }) }}
                         disabled={deletingId === s.id}
                         style={{
                           ...actionBtn,
@@ -242,6 +237,25 @@ export default function ResultsTab() {
       {selectedStudent && (
         <StudentDetailModal student={selectedStudent} onClose={() => setSelectedStudent(null)} />
       )}
+
+      <ConfirmDialog
+        open={confirmDialog?.type === "delete" && !!confirmDialog.student}
+        title="Delete Student"
+        message={`Are you sure you want to delete "${confirmDialog?.student?.full_name}"? This will permanently remove their assessment results, rankings, and preferences. This action cannot be undone.`}
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={() => confirmDialog?.student && handleDeleteStudent(confirmDialog.student)}
+        onCancel={() => setConfirmDialog(null)}
+      />
+      <ConfirmDialog
+        open={confirmDialog?.type === "export"}
+        title="Export Students CSV"
+        message={`Export ${students.length} student record${students.length === 1 ? "" : "s"} to a CSV file?`}
+        confirmLabel="Export"
+        variant="export"
+        onConfirm={() => { setConfirmDialog(null); exportStudentsCSV() }}
+        onCancel={() => setConfirmDialog(null)}
+      />
     </div>
   )
 }

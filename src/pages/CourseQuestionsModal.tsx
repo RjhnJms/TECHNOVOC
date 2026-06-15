@@ -2,6 +2,7 @@ import { useState, useEffect } from "react"
 import { supabase } from "../supabaseClient"
 import { Loader2, Pencil, Plus, Trash2 } from "lucide-react"
 import EditQuestionModal from "./EditQuestionModal"
+import ConfirmDialog from "../components/ConfirmDialog"
 import {
   isPoolFull,
   poolSlotsRemaining,
@@ -52,6 +53,7 @@ export default function CourseQuestionsModal({ course, onClose, onChanged }: Pro
   const [newQuestion, setNewQuestion] = useState(emptyQuestion)
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null)
   const [deletingAll, setDeletingAll] = useState(false)
+  const [confirmDialog, setConfirmDialog] = useState<{ type: "delete" | "delete-all"; questionId?: number } | null>(null)
 
   const fetchQuestions = async () => {
     setLoading(true)
@@ -105,21 +107,15 @@ export default function CourseQuestionsModal({ course, onClose, onChanged }: Pro
   }
 
   const handleDeleteQuestion = async (id: number) => {
-    if (!confirm("Delete this question?")) return
+    setConfirmDialog(null)
     await supabase.from("questions").delete().eq("id", id)
     await fetchQuestions()
     onChanged()
   }
 
   const handleDeleteAllQuestions = async () => {
+    setConfirmDialog(null)
     if (questions.length === 0) return
-    if (
-      !confirm(
-        `Delete all ${questions.length} question(s) for ${course.course_name}?\n\nThis cannot be undone.`
-      )
-    ) {
-      return
-    }
 
     setDeletingAll(true)
     const { error: deleteError } = await supabase
@@ -194,7 +190,7 @@ export default function CourseQuestionsModal({ course, onClose, onChanged }: Pro
             </button>
             <button
               type="button"
-              onClick={handleDeleteAllQuestions}
+              onClick={() => setConfirmDialog({ type: "delete-all" })}
               disabled={loading || deletingAll || questions.length === 0}
               style={{
                 padding: "8px 16px",
@@ -327,7 +323,7 @@ export default function CourseQuestionsModal({ course, onClose, onChanged }: Pro
                           </span>
                         </button>
                         <button
-                          onClick={() => handleDeleteQuestion(q.id)}
+                          onClick={() => setConfirmDialog({ type: "delete", questionId: q.id })}
                           style={{ padding: "4px 10px", backgroundColor: "#fef2f2", color: "#dc2626", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px", fontWeight: "600" }}
                         >
                           <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
@@ -353,6 +349,30 @@ export default function CourseQuestionsModal({ course, onClose, onChanged }: Pro
           onSaved={() => { fetchQuestions(); onChanged(); setEditingQuestion(null) }}
         />
       )}
+
+      <ConfirmDialog
+        open={confirmDialog?.type === "delete"}
+        title="Delete Question"
+        message="Are you sure you want to delete this question? This action cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={() => {
+          if (confirmDialog?.questionId) {
+            handleDeleteQuestion(confirmDialog.questionId)
+          }
+        }}
+        onCancel={() => setConfirmDialog(null)}
+      />
+
+      <ConfirmDialog
+        open={confirmDialog?.type === "delete-all"}
+        title="Delete All Questions"
+        message={`Are you sure you want to delete all ${questions.length} questions for ${course.course_name}? This action cannot be undone.`}
+        confirmLabel="Delete All"
+        variant="danger"
+        onConfirm={handleDeleteAllQuestions}
+        onCancel={() => setConfirmDialog(null)}
+      />
     </div>
   )
 }

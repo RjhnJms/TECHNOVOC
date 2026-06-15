@@ -237,7 +237,26 @@ export async function saveStudentRecommendations(
     }
   }
 
-  if (fromPreferredCourses && top3.length > 0) {
+  const scoreByCourse = new Map(allScores.map(s => [s.course_id, s]))
+  const passedPreferred = preferredCourseIds
+    .map((id, index) => {
+      const s = scoreByCourse.get(id)
+      return {
+        course_id: id,
+        score: s ? s.score : 0,
+        total_items: s ? s.total_items : 10,
+        preference_order: index + 1,
+      }
+    })
+    .filter(p => isPassingScore(p.score, p.total_items))
+
+  // Sort: highest score first; if tie, higher preference order first (lower number)
+  passedPreferred.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score
+    return a.preference_order - b.preference_order
+  })
+
+  if (passedPreferred.length === 3 && top3.length > 0) {
     const { error: insertError } = await supabase.from("rankings").insert(
       top3.map(r => ({
         student_id: studentId,
@@ -254,14 +273,30 @@ export async function saveStudentRecommendations(
         error: insertError.message,
       }
     }
-  } else if (!fromPreferredCourses) {
+  } else if (passedPreferred.length > 0) {
+    const best = passedPreferred[0]
+    const { error: insertError } = await supabase.from("rankings").insert({
+      student_id: studentId,
+      course_id: best.course_id,
+      score: best.score,
+      rank: 1,
+      status: "included",
+    })
+    if (insertError) {
+      return {
+        fromPreferredCourses: false,
+        recommendations: top3,
+        error: insertError.message,
+      }
+    }
+  } else {
     const bestScore = allScores.reduce((max, s) => Math.max(max, s.score), 0)
     const { error: insertError } = await supabase.from("rankings").insert({
       student_id: studentId,
       course_id: null,
       score: bestScore,
       rank: 0,
-      status: "placement_waitlist",
+      status: "waitlist",
     })
     if (insertError) {
       return {

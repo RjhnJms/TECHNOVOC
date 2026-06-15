@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { assignPlacementCourse, buildAssignableCourseOptions } from "../utils/studentRecommendations"
+import ConfirmDialog from "./ConfirmDialog"
 
 interface Course {
   id: string
@@ -36,6 +37,7 @@ export default function AssignCoursePanel({
   const [selectedCourseId, setSelectedCourseId] = useState("")
   const [assigning, setAssigning] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showAssignConfirm, setShowAssignConfirm] = useState(false)
 
   const options = buildAssignableCourseOptions(
     courses,
@@ -47,14 +49,16 @@ export default function AssignCoursePanel({
   )
   const assignableCount = options.filter(o => !o.disabled).length
 
-  const handleAssign = async () => {
+  const handleAssignClick = () => {
     if (!selectedCourseId) {
       setError("Please select a course first.")
       return
     }
+    setShowAssignConfirm(true)
+  }
 
-    const courseName = courses.find(c => c.id === selectedCourseId)?.course_name ?? "this course"
-    if (!confirm(`Assign ${studentName} to ${courseName}?`)) return
+  const handleAssignConfirm = async () => {
+    setShowAssignConfirm(false)
 
     setAssigning(true)
     setError(null)
@@ -128,7 +132,7 @@ export default function AssignCoursePanel({
           </div>
           <button
             type="button"
-            onClick={handleAssign}
+            onClick={handleAssignClick}
             disabled={assigning || !selectedCourseId}
             style={{
               padding: "10px 20px",
@@ -151,6 +155,15 @@ export default function AssignCoursePanel({
       {error && (
         <p style={{ color: "#b91c1c", fontSize: "13px", margin: "10px 0 0" }}>{error}</p>
       )}
+      <ConfirmDialog
+        open={showAssignConfirm}
+        title="Assign Student"
+        message={`Are you sure you want to assign ${studentName} to ${courses.find(c => c.id === selectedCourseId)?.course_name ?? "this course"}?`}
+        confirmLabel="Assign"
+        variant="assign"
+        onConfirm={handleAssignConfirm}
+        onCancel={() => setShowAssignConfirm(false)}
+      />
     </div>
   )
 }

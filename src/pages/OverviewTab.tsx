@@ -61,9 +61,10 @@ export default function OverviewTab() {
       .from("students")
       .select("*", { count: "exact", head: true })
 
-    const { count: totalAssessments } = await supabase
+    const { data: assessedForCount } = await supabase
       .from("assessments")
-      .select("*", { count: "exact", head: true })
+      .select("student_id")
+    const totalAssessments = new Set(assessedForCount?.map(a => a.student_id)).size
 
     const { data: qualifiedData } = await supabase
       .from("assessments")
@@ -82,13 +83,8 @@ export default function OverviewTab() {
       .select("capacity")
     const totalCapacity = allCourses?.reduce((sum, c) => sum + (c.capacity || 0), 0) || 0
 
-    const { count: totalPassed } = await supabase
-      .from("assessments")
-      .select("*", { count: "exact", head: true })
-      .eq("passed", true)
-
-    const passingRate = totalAssessments && totalAssessments > 0
-      ? Math.round(((totalPassed || 0) / totalAssessments) * 100)
+    const passingRate = totalAssessments > 0
+      ? Math.round((qualified / totalAssessments) * 100)
       : 0
 
     const { count: totalEnrolled } = await supabase
@@ -279,7 +275,7 @@ export default function OverviewTab() {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", marginBottom: "24px" }}>
         {[
-          { label: "Total Assessments Taken", value: stats.totalAssessments, icon: <ClipboardList size={22} />, color: "#0891b2" },
+          { label: "Students Assessed", value: stats.totalAssessments, icon: <ClipboardList size={22} />, color: "#0891b2" },
           { label: "Qualified", value: stats.totalEnrolled, icon: <GraduationCap size={22} />, color: "#16a34a" },
           { label: "On Waitlist", value: stats.totalWaitlist, icon: <Clock size={22} />, color: "#f59e0b" },
         ].map(stat => (

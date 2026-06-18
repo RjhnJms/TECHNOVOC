@@ -3,18 +3,17 @@ import { supabase } from "../supabaseClient"
 import ResultsTab from "./ResultsTab"
 import CoursesTab from "./CoursesTab"
 import OverviewTab from "./OverviewTab"
-import WaitlistTab from "./WaitlistTab"
 import SettingsTab from "./SettingsTab"
 import ReportsTab from "./ReportsTab"
 import StudentDetailModal from "./StudentDetailModal"
-import { BarChart3, BookOpen, Trophy, Clock, Settings, FileText } from "lucide-react"
+import { BarChart3, BookOpen, Trophy, Settings, FileText } from "lucide-react"
 
 interface Props {
   adminName: string
   onLogout: () => void
 }
 
-type Tab = "overview" | "courses" | "results" | "reports" | "waitlist" | "settings"
+type Tab = "overview" | "courses" | "results" | "reports" | "settings"
 
 const NAVS_COURSES = [
   "Automotive",
@@ -66,7 +65,6 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
     { key: "courses", label: "Course Management", icon: <BookOpen size={16} /> },
     { key: "results", label: "Results", icon: <Trophy size={16} /> },
     { key: "reports", label: "Reports", icon: <FileText size={16} /> },
-    { key: "waitlist", label: "Waitlist", icon: <Clock size={16} /> },
     { key: "settings", label: "Settings", icon: <Settings size={16} /> },
   ]
 
@@ -118,19 +116,6 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
         {activeTab === "courses" && <CoursesTab />}
         {activeTab === "results" && <ResultsTab />}
         {activeTab === "reports" && <ReportsTab />}
-        {activeTab === "waitlist" && (
-          <WaitlistTab
-            onSelectStudent={student =>
-              setSelectedStudent({
-                id: student.id,
-                full_name: student.full_name,
-                lrn: student.lrn,
-                school_year: student.school_year,
-                created_at: student.created_at || new Date().toISOString(),
-              })
-            }
-          />
-        )}
         {activeTab === "settings" && <SettingsTab />}
       </div>
 

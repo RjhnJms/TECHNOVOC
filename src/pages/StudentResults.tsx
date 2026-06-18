@@ -41,6 +41,7 @@ interface StudentInfo {
 export default function StudentResults({ studentId, studentName, onLogout, onRetake }: Props) {
   const [assessments, setAssessments] = useState<AssessmentResult[]>([])
   const [rankings, setRankings] = useState<RankingResult[]>([])
+  const [assignedCourse, setAssignedCourse] = useState<RankingResult | null>(null)
   const [studentInfo, setStudentInfo] = useState<StudentInfo>({ lrn: "", school_year: "" })
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<"scores" | "rankings">("scores")
@@ -81,30 +82,37 @@ export default function StudentResults({ studentId, studentName, onLogout, onRet
       )
 
       const placementPending = (rData.data || []).some(r => r.status === "waitlist" && !r.course_id)
+      const assigned = (rData.data || []).find(r => r.status === "included" && r.course_id)
+      setAssignedCourse(assigned ?? null)
+
       if (placementPending) {
         setRecommendationSource("placement_pending")
-      } else if (rData.data && rData.data.length === 1) {
+      } else if (assigned) {
         setRecommendationSource("assigned")
       } else {
         setRecommendationSource(computed[0]?.fromPreferredCourses ? "preferred" : "fallback")
       }
 
-      if (rData.data && rData.data.length > 0) {
-        setRankings(rData.data.filter(r => !(r.status === "waitlist" && !r.course_id)))
-      } else if (computed.length > 0) {
-        const { data: courses } = await supabase.from("courses").select("id, course_name, capacity")
-        const courseById = Object.fromEntries((courses || []).map(c => [c.id, c]))
-        setRankings(computed.map((c, i) => ({
-          id: `computed-${i}`,
-          score: c.score,
-          rank: c.rank,
-          status: "recommended",
-          courses: courseById[c.course_id]
-            ? { course_name: courseById[c.course_id].course_name, capacity: courseById[c.course_id].capacity }
-            : undefined,
-        })))
+      const useComputed = !computed[0]?.fromPreferredCourses && !assigned
+
+      if (useComputed) {
+        if (computed.length > 0) {
+          const { data: courses } = await supabase.from("courses").select("id, course_name, capacity")
+          const courseById = Object.fromEntries((courses || []).map(c => [c.id, c]))
+          setRankings(computed.map((c, i) => ({
+            id: `computed-${i}`,
+            score: c.score,
+            rank: c.rank,
+            status: "recommended",
+            courses: courseById[c.course_id]
+              ? { course_name: courseById[c.course_id].course_name, capacity: courseById[c.course_id].capacity }
+              : undefined,
+          })))
+        } else {
+          setRankings([])
+        }
       } else {
-        setRankings([])
+        setRankings(rData.data || [])
       }
       setLoading(false)
     }
@@ -168,6 +176,7 @@ export default function StudentResults({ studentId, studentName, onLogout, onRet
               assessments={assessments}
               recommendationSource={recommendationSource}
               preferredCourseNames={preferredCourseNames}
+              assignedCourse={assignedCourse}
             />
             <ResultTabs
               activeTab={activeTab}
@@ -274,12 +283,13 @@ function ResultBanner({ totalScore, totalItems, takenAt }: {
 }
 
 function Top3Courses({
-  top3, assessments, recommendationSource, preferredCourseNames,
+  top3, assessments, recommendationSource, preferredCourseNames, assignedCourse,
 }: {
   top3: RankingResult[]
   assessments: AssessmentResult[]
   recommendationSource: "preferred" | "fallback" | "placement_pending" | "assigned"
   preferredCourseNames: string[]
+  assignedCourse: RankingResult | null
 }) {
   return (
     <div style={{ backgroundColor: "white", borderRadius: "16px", padding: "24px", marginBottom: "20px", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
@@ -293,67 +303,134 @@ function Top3Courses({
               ? "🏆 You have been successfully placed in a course track."
               : "📊 Your top 3 course recommendations are based on your highest scores across the full exam."}
       </p>
-      {recommendationSource === "preferred" && (
-        <p style={{ backgroundColor: "#f0fdf4", color: "#15803d", fontSize: "12px", padding: "8px 12px", borderRadius: "8px", margin: "0 0 16px", fontWeight: "600" }}>
-          🏆 High Competency on your 3 preferred courses — you qualify for these tracks!
-        </p>
+
+      {/* Assigned Placement Banner */}
+      {recommendationSource === "assigned" && assignedCourse && (
+        <div style={{ backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
+          <p style={{ fontWeight: "700", color: "#15803d", margin: "0 0 4px", fontSize: "14px" }}>🎉 Course Placement Assigned</p>
+          <p style={{ color: "#374151", fontSize: "18px", fontWeight: "800", margin: "0 0 6px" }}>
+            {assignedCourse.courses?.course_name}
+          </p>
+          <p style={{ color: "#16a34a", fontSize: "13px", margin: 0, fontWeight: "600" }}>
+            You have been successfully placed in this track.
+          </p>
+        </div>
       )}
-      {recommendationSource === "assigned" && (
+      {recommendationSource === "assigned" && !assignedCourse && (
         <p style={{ backgroundColor: "#f0fdf4", color: "#15803d", fontSize: "12px", padding: "8px 12px", borderRadius: "8px", margin: "0 0 16px", fontWeight: "600" }}>
           🎉 You have been assigned to your course placement based on your preferred choices and/or scores!
         </p>
       )}
+
+      {/* Preferred Courses & Scores - Always show for visibility */}
+      {preferredCourseNames.length > 0 && (
+        <div style={{ marginBottom: "16px" }}>
+          <div style={{ backgroundColor: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "14px 16px" }}>
+            <p style={{ fontWeight: "700", margin: "0 0 10px", fontSize: "13px", color: "#374151" }}>Your 3 Preferred Courses & Scores:</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              {preferredCourseNames.map((name, index) => {
+                const assessment = assessments.find(a => a.courses?.course_name === name)
+                const score = assessment?.score ?? 0
+                const total = assessment?.total_items ?? QUESTIONS_PER_TRACK
+                const passed = score >= 6
+                return (
+                  <div key={name} style={{
+                    backgroundColor: "white",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: "8px",
+                    padding: "10px 14px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center"
+                  }}>
+                    <div>
+                      <p style={{ margin: 0, fontSize: "14px", fontWeight: "700", color: "#111827" }}>
+                        #{index + 1} {name}
+                      </p>
+                      <p style={{ margin: "2px 0 0", fontSize: "11.5px", color: "#6b7280" }}>Preferred course</p>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <p style={{ margin: 0, fontWeight: "800", fontSize: "16px", color: "#2563eb" }}>
+                        {score} / {total}
+                      </p>
+                      <span style={{
+                        fontSize: "11px",
+                        fontWeight: "700",
+                        padding: "2px 8px",
+                        borderRadius: "10px",
+                        backgroundColor: passed ? "#dcfce7" : "#fef2f2",
+                        color: passed ? "#16a34a" : "#dc2626"
+                      }}>
+                        {passed ? "Passed" : "Failed"}
+                      </span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Waitlist info (if applicable) */}
       {recommendationSource === "placement_pending" && (
         <div style={{ backgroundColor: "#f3e8ff", border: "1px solid #c4b5fd", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
           <p style={{ fontWeight: "700", color: "#5b21b6", margin: "0 0 8px", fontSize: "14px" }}>On placement waitlist</p>
-          <p style={{ color: "#6b7280", fontSize: "13px", margin: "0 0 10px", lineHeight: 1.5 }}>
-            Your preferred courses: {preferredCourseNames.join(", ") || "—"}
-          </p>
           <p style={{ color: "#7c3aed", fontSize: "13px", margin: 0, fontWeight: "600" }}>
             Please wait for your teacher to assign your final track.
           </p>
         </div>
       )}
 
-      {recommendationSource === "placement_pending" ? null : top3.length === 0 ? (
-        <div style={{ backgroundColor: "#fef2f2", borderRadius: "12px", padding: "24px", textAlign: "center" }}>
-          <p style={{ fontSize: "32px", margin: "0 0 8px" }}>😔</p>
-          <p style={{ fontWeight: "700", color: "#dc2626", margin: "0 0 6px", fontSize: "16px" }}>No Qualified Courses</p>
-          <p style={{ color: "#6b7280", fontSize: "13px", margin: 0 }}>
-            No course recommendations found yet. Please complete the assessment first.
-          </p>
-        </div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-          {top3.map((r, i) => {
-            const assessment = assessments.find(a => a.courses?.course_name === r.courses?.course_name)
-            const total = assessment?.total_items ?? 0
-            return (
-              <div key={r.id} style={{ display: "flex", alignItems: "center", gap: "16px", padding: "18px", borderRadius: "12px", backgroundColor: i === 0 ? "#fffbeb" : i === 1 ? "#f8fafc" : "#f9fafb", border: `1px solid ${i === 0 ? "#fcd34d" : "#e5e7eb"}` }}>
-                <span style={{ fontWeight: "800", fontSize: "18px", color: i === 0 ? "#d97706" : i === 1 ? "#6b7280" : "#b45309", flexShrink: 0, minWidth: "32px" }}>
-                  #{i + 1}
-                </span>
-                <div style={{ flex: 1 }}>
-                  <p style={{ fontWeight: "700", margin: "0 0 4px", fontSize: "16px" }}>{r.courses?.course_name}</p>
-                  <p style={{ fontSize: "14px", color: "#2563eb", fontWeight: "700", margin: "0 0 6px" }}>
-                    Score: {r.score} / {total || QUESTIONS_PER_TRACK}
-                  </p>
-                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                    <span style={{
-                      ...getRankingStatusStyle(r.status, r.score),
-                      padding: "3px 10px",
-                      borderRadius: "20px",
-                      fontSize: "12px",
-                      fontWeight: "700",
-                    }}>
-                      {getRankingStatusLabel(r.status, r.score)}
+      {/* Recommended list - Hide completely if system already placed the student */}
+      {recommendationSource !== "assigned" && (
+        <>
+          {top3.length === 0 ? (
+            <div style={{ backgroundColor: "#fef2f2", borderRadius: "12px", padding: "24px", textAlign: "center" }}>
+              <p style={{ fontSize: "32px", margin: "0 0 8px" }}>😔</p>
+              <p style={{ fontWeight: "700", color: "#dc2626", margin: "0 0 6px", fontSize: "16px" }}>No Qualified Courses</p>
+              <p style={{ color: "#6b7280", fontSize: "13px", margin: 0 }}>
+                No course recommendations found yet. Please complete the assessment first.
+              </p>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              {(recommendationSource === "placement_pending") && (
+                <p style={{ fontSize: "14px", fontWeight: "600", color: "#4b5563", margin: "4px 0 10px" }}>
+                  💡 Here are your top 3 recommended courses based on your exam scores (excluding preferred courses):
+                </p>
+              )}
+              {top3.map((r, i) => {
+                const assessment = assessments.find(a => a.courses?.course_name === r.courses?.course_name)
+                const total = assessment?.total_items ?? 0
+                return (
+                  <div key={r.id} style={{ display: "flex", alignItems: "center", gap: "16px", padding: "18px", borderRadius: "12px", backgroundColor: i === 0 ? "#fffbeb" : i === 1 ? "#f8fafc" : "#f9fafb", border: `1px solid ${i === 0 ? "#fcd34d" : "#e5e7eb"}` }}>
+                    <span style={{ fontWeight: "800", fontSize: "18px", color: i === 0 ? "#d97706" : i === 1 ? "#6b7280" : "#b45309", flexShrink: 0, minWidth: "32px" }}>
+                      #{i + 1}
                     </span>
+                    <div style={{ flex: 1 }}>
+                      <p style={{ fontWeight: "700", margin: "0 0 4px", fontSize: "16px" }}>{r.courses?.course_name}</p>
+                      <p style={{ fontSize: "14px", color: "#2563eb", fontWeight: "700", margin: "0 0 6px" }}>
+                        Score: {r.score} / {total || QUESTIONS_PER_TRACK}
+                      </p>
+                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                        <span style={{
+                          ...getRankingStatusStyle(r.status, r.score),
+                          padding: "3px 10px",
+                          borderRadius: "20px",
+                          fontSize: "12px",
+                          fontWeight: "700",
+                        }}>
+                          {getRankingStatusLabel(r.status, r.score)}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-            )
-          })}
-        </div>
+                )
+              })}
+            </div>
+          )}
+        </>
       )}
     </div>
   )
@@ -397,7 +474,7 @@ function ScoresTable({ assessments, totalScore, totalItems }: {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
           <thead>
             <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
-              {["Course", "Score", "Out of", "Competency"].map(h => (
+              {["Course", "Score", "Out of", "Result"].map(h => (
                 <th key={h} style={{ textAlign: "left", padding: "10px 12px", color: "#6b7280", fontWeight: "600" }}>{h}</th>
               ))}
             </tr>
@@ -410,14 +487,14 @@ function ScoresTable({ assessments, totalScore, totalItems }: {
                 <td style={{ padding: "12px", color: "#6b7280" }}>{a.total_items}</td>
                 <td style={{ padding: "12px" }}>
                   <span style={{
-                    backgroundColor: getCompetencyLevel(a.score, a.total_items) === "High" ? "#dcfce7" : "#fef2f2",
-                    color: getCompetencyLevel(a.score, a.total_items) === "High" ? "#16a34a" : "#dc2626",
+                    backgroundColor: getCompetencyLevel(a.score, a.total_items) === "Passed" ? "#dcfce7" : "#fef2f2",
+                    color: getCompetencyLevel(a.score, a.total_items) === "Passed" ? "#16a34a" : "#dc2626",
                     padding: "3px 12px",
                     borderRadius: "20px",
                     fontSize: "12px",
                     fontWeight: "700",
                   }}>
-                    {getCompetencyLevel(a.score, a.total_items)} Competency
+                    {getCompetencyLevel(a.score, a.total_items)}
                   </span>
                 </td>
               </tr>
@@ -445,7 +522,7 @@ function RankingsTable({ rankings }: { rankings: RankingResult[] }) {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
           <thead>
             <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
-              {["Course", "Score", "Recommendation", "Competency"].map(h => (
+              {["Course", "Score", "Recommendation", "Result"].map(h => (
                 <th key={h} style={{ textAlign: "left", padding: "10px 12px", color: "#6b7280", fontWeight: "600" }}>{h}</th>
               ))}
             </tr>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react"
 import { supabase } from "../supabaseClient"
-import { Download, FileText, RefreshCw, Search } from "lucide-react"
+import { Download, FileText, RefreshCw, Search, ChevronDown } from "lucide-react"
 import { QUESTIONS_PER_TRACK, getCompetencyLevel } from "../utils/trackRanking"
 import ConfirmDialog from "../components/ConfirmDialog"
 
@@ -22,6 +22,123 @@ interface IncludedRanking {
     school_year: string
   } | null
   courses?: { course_name: string } | null
+}
+
+function CustomSelect({
+  value,
+  onChange,
+  options,
+}: {
+  value: string
+  onChange: (val: string) => void
+  options: { value: string; label: string }[]
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  const selectedOption = options.find(o => o.value === value)
+
+  return (
+    <div style={{ position: "relative", width: "100%" }}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          width: "100%",
+          padding: "10px 14px",
+          borderRadius: "8px",
+          border: "1px solid #e5e7eb",
+          backgroundColor: "white",
+          color: "#374151",
+          fontSize: "14px",
+          textAlign: "left",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          cursor: "pointer",
+          outline: "none",
+          boxShadow: "0 1px 2px rgba(0,0,0,0.02)",
+          fontWeight: "500",
+        }}
+        onFocus={(e) => {
+          e.currentTarget.style.borderColor = "#6366f1"
+        }}
+        onBlur={(e) => {
+          e.currentTarget.style.borderColor = "#e5e7eb"
+          setTimeout(() => setIsOpen(false), 200)
+        }}
+      >
+        <span>{selectedOption?.label || "Select track..."}</span>
+        <ChevronDown
+          size={16}
+          style={{
+            transform: isOpen ? "rotate(180deg)" : "rotate(0deg)",
+            transition: "transform 0.2s ease",
+            color: "#9ca3af",
+          }}
+        />
+      </button>
+
+      {isOpen && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 6px)",
+            left: 0,
+            right: 0,
+            backgroundColor: "white",
+            borderRadius: "8px",
+            border: "1px solid #e5e7eb",
+            boxShadow: "0 10px 25px -5px rgba(0,0,0,0.08), 0 8px 10px -6px rgba(0,0,0,0.08)",
+            zIndex: 1000,
+            maxHeight: "260px",
+            overflowY: "auto",
+            padding: "4px",
+          }}
+        >
+          {options.map((opt) => {
+            const isSelected = opt.value === value
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => {
+                  onChange(opt.value)
+                  setIsOpen(false)
+                }}
+                style={{
+                  width: "100%",
+                  padding: "9px 12px",
+                  border: "none",
+                  borderRadius: "6px",
+                  backgroundColor: isSelected ? "#f3f4f6" : "transparent",
+                  color: isSelected ? "#111827" : "#4b5563",
+                  fontSize: "14px",
+                  fontWeight: isSelected ? "600" : "400",
+                  textAlign: "left",
+                  cursor: "pointer",
+                  display: "block",
+                  transition: "background-color 0.1s ease",
+                }}
+                onMouseEnter={(e) => {
+                  if (!isSelected) {
+                    e.currentTarget.style.backgroundColor = "#fafafa"
+                    e.currentTarget.style.color = "#111827"
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isSelected) {
+                    e.currentTarget.style.backgroundColor = "transparent"
+                    e.currentTarget.style.color = "#4b5563"
+                  }
+                }}
+              >
+                {opt.label}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function escapeCsv(value: string): string {
@@ -101,7 +218,7 @@ export default function ReportsTab() {
       "LRN",
       "School Year",
       `Score (/${QUESTIONS_PER_TRACK})`,
-      "Competency",
+      "Result",
       "Status",
     ]
     const data = rows
@@ -192,20 +309,17 @@ export default function ReportsTab() {
         <p style={{ color: "#6b7280", fontSize: "13px", margin: "0 0 12px" }}>
           View the final included list for each TVE course
         </p>
-        <select
+        <CustomSelect
           value={selectedCourse}
-          onChange={e => {
-            setSelectedCourse(e.target.value)
+          onChange={val => {
+            setSelectedCourse(val)
             setSearchQuery("")
           }}
-          style={selectStyle}
-        >
-          {courses.map(c => (
-            <option key={c.id} value={c.id}>
-              {c.course_name} ({included.filter(r => r.course_id === c.id).length} included)
-            </option>
-          ))}
-        </select>
+          options={courses.map(c => ({
+            value: c.id,
+            label: `${c.course_name} (${included.filter(r => r.course_id === c.id).length} included)`,
+          }))}
+        />
       </div>
 
       {selected && (
@@ -243,7 +357,7 @@ export default function ReportsTab() {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
               <thead>
                 <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
-                  {["Rank", "Student", "LRN", "School year", "Score", "Competency"].map(h => (
+                  {["Rank", "Student", "LRN", "School year", "Score", "Result"].map(h => (
                     <th key={h} style={thStyle}>{h}</th>
                   ))}
                 </tr>
@@ -263,14 +377,14 @@ export default function ReportsTab() {
                     </td>
                     <td style={tdStyle}>
                       <span style={{
-                        backgroundColor: getCompetencyLevel(r.score, QUESTIONS_PER_TRACK) === "High" ? "#dcfce7" : "#fef2f2",
-                        color: getCompetencyLevel(r.score, QUESTIONS_PER_TRACK) === "High" ? "#16a34a" : "#dc2626",
+                        backgroundColor: getCompetencyLevel(r.score, QUESTIONS_PER_TRACK) === "Passed" ? "#dcfce7" : "#fef2f2",
+                        color: getCompetencyLevel(r.score, QUESTIONS_PER_TRACK) === "Passed" ? "#16a34a" : "#dc2626",
                         padding: "3px 10px",
                         borderRadius: "20px",
                         fontSize: "12px",
                         fontWeight: "700",
                       }}>
-                        {getCompetencyLevel(r.score, QUESTIONS_PER_TRACK)} Competency
+                        {getCompetencyLevel(r.score, QUESTIONS_PER_TRACK)}
                       </span>
                     </td>
                   </tr>

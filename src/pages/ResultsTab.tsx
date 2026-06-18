@@ -19,15 +19,61 @@ export default function ResultsTab() {
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [confirmDialog, setConfirmDialog] = useState<{ type: "delete" | "export"; student?: Student } | null>(null)
+  const [placementStatuses, setPlacementStatuses] = useState<Record<string, { label: string; style: React.CSSProperties }>>({})
 
   const fetchData = useCallback(async () => {
     setLoading(true)
-    const { data: studentData } = await supabase
-      .from("students")
-      .select("id, full_name, lrn, school_year, created_at")
-      .order("created_at", { ascending: false })
+    const [{ data: studentData }, { data: rankData }, { data: assessmentData }] = await Promise.all([
+      supabase
+        .from("students")
+        .select("id, full_name, lrn, school_year, created_at")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("rankings")
+        .select("student_id, course_id, status, courses(course_name)"),
+      supabase
+        .from("assessments")
+        .select("student_id")
+    ])
+
+    const takenStudentIds = new Set((assessmentData || []).map(a => a.student_id))
+    const statusMap: Record<string, { label: string; style: React.CSSProperties }> = {}
+
+    for (const student of studentData || []) {
+      const sId = student.id
+      if (!takenStudentIds.has(sId)) {
+        statusMap[sId] = {
+          label: "Not Taken",
+          style: { backgroundColor: "#f3f4f6", color: "#6b7280" }
+        }
+        continue
+      }
+
+      const studentRanks = (rankData || []).filter(r => r.student_id === sId)
+      const assigned = studentRanks.find(r => r.status === "included" && r.course_id)
+      const waitlist = studentRanks.find(r => r.status === "waitlist" && !r.course_id)
+
+      if (assigned) {
+        const cName = (assigned.courses as { course_name?: string })?.course_name || "Assigned"
+        statusMap[sId] = {
+          label: cName,
+          style: { backgroundColor: "#dcfce7", color: "#16a34a", fontWeight: "700" }
+        }
+      } else if (waitlist) {
+        statusMap[sId] = {
+          label: "Waitlist",
+          style: { backgroundColor: "#f3e8ff", color: "#7c3aed", fontWeight: "700" }
+        }
+      } else {
+        statusMap[sId] = {
+          label: "Pending",
+          style: { backgroundColor: "#fef3c7", color: "#d97706", fontWeight: "700" }
+        }
+      }
+    }
 
     setStudents(studentData || [])
+    setPlacementStatuses(statusMap)
     setLoading(false)
   }, [])
 
@@ -147,7 +193,7 @@ export default function ResultsTab() {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
             <thead>
               <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
-                {["Full Name", "LRN", "School Year", "Registered", "Actions"].map(h => (
+                {["Full Name", "LRN", "School Year", "Registered", "Placement Status", "Actions"].map(h => (
                   <th
                     key={h}
                     style={{ textAlign: "left", padding: "10px 12px", color: "#6b7280", fontWeight: "600" }}
@@ -171,6 +217,22 @@ export default function ResultsTab() {
                   <td style={{ padding: "10px 12px" }}>{s.school_year}</td>
                   <td style={{ padding: "10px 12px", color: "#6b7280" }}>
                     {new Date(s.created_at).toLocaleDateString()}
+                  </td>
+                  <td style={{ padding: "10px 12px" }}>
+                    {placementStatuses[s.id] ? (
+                      <span
+                        style={{
+                          padding: "4px 10px",
+                          borderRadius: "12px",
+                          fontSize: "12px",
+                          ...placementStatuses[s.id].style,
+                        }}
+                      >
+                        {placementStatuses[s.id].label}
+                      </span>
+                    ) : (
+                      <span style={{ color: "#9ca3af", fontSize: "12px" }}>—</span>
+                    )}
                   </td>
                   <td style={{ padding: "10px 12px" }}>
                     <div style={{ display: "flex", gap: "8px" }}>
@@ -235,7 +297,13 @@ export default function ResultsTab() {
       </div>
 
       {selectedStudent && (
-        <StudentDetailModal student={selectedStudent} onClose={() => setSelectedStudent(null)} />
+        <StudentDetailModal
+          student={selectedStudent}
+          onClose={() => {
+            setSelectedStudent(null)
+            fetchData()
+          }}
+        />
       )}
 
       <ConfirmDialog

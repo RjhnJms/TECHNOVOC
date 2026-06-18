@@ -57,17 +57,14 @@ export function computeTop3Recommendations(
     // CASE A: all preferred courses passed — sort by score desc
     picks = [...preferredScores].sort((a, b) => b.score - a.score)
   } else {
-    // CASE B: sort full list with tiebreaker
+    // CASE B: sort full list excluding preferred courses
     const preferredSet = new Set(preferredCourseIds)
-    picks = [...allScores]
+    picks = allScores
+      .filter(s => !preferredSet.has(s.course_id))
       .sort((a, b) => {
         // Primary: higher score first
         if (b.score !== a.score) return b.score - a.score
-        // Secondary tiebreaker: preferred course beats non-preferred
-        const aIsPreferred = preferredSet.has(a.course_id) ? 0 : 1
-        const bIsPreferred = preferredSet.has(b.course_id) ? 0 : 1
-        if (aIsPreferred !== bIsPreferred) return aIsPreferred - bIsPreferred
-        // Tertiary: alphabetical by course_id for determinism
+        // Secondary: alphabetical by course_id for determinism
         return a.course_id.localeCompare(b.course_id)
       })
       .slice(0, 3)
@@ -86,6 +83,19 @@ export function allPreferredCoursesPassed(
   preferredCourseIds: string[]
 ): boolean {
   return computeTop3Recommendations(allScores, preferredCourseIds)[0]?.fromPreferredCourses ?? false
+}
+
+/** True when the student did not pass any of their 3 preferred courses (needs manual placement). */
+export function needsPlacementWaitlist(
+  allScores: CourseScore[],
+  preferredCourseIds: string[]
+): boolean {
+  if (preferredCourseIds.length !== 3) return false
+  const scoreByCourse = new Map(allScores.map(s => [s.course_id, s]))
+  return preferredCourseIds.every(id => {
+    const s = scoreByCourse.get(id)
+    return !s || !isPassingScore(s.score, s.total_items)
+  })
 }
 
 export async function fetchStudentPreferredCourseIds(studentId: string): Promise<string[]> {

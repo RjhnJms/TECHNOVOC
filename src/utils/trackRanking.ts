@@ -13,10 +13,10 @@ export function isPassingScore(score: number, totalItems: number = QUESTIONS_PER
 }
 
 /**
- * Returns "High" if score passes (≥ PASSING_SCORE), "Low" otherwise.
+ * Returns "Passed" if score passes (≥ PASSING_SCORE), "Failed" otherwise.
  */
-export function getCompetencyLevel(score: number, totalItems: number = QUESTIONS_PER_TRACK): "High" | "Low" {
-  return isPassingScore(score, totalItems) ? "High" : "Low"
+export function getCompetencyLevel(score: number, totalItems: number = QUESTIONS_PER_TRACK): "Passed" | "Failed" {
+  return isPassingScore(score, totalItems) ? "Passed" : "Failed"
 }
 
 /**
@@ -33,15 +33,15 @@ export function getRankingStatusLabel(status: string, score?: number): string {
   const isHigh = score !== undefined ? score >= PASSING_SCORE : true
   switch (status) {
     case "included":
-      return isHigh ? "High Competency" : "Low Competency (Placed)"
+      return isHigh ? "Passed (Placed)" : "Failed (Placed)"
     case "waitlist":
-      return "Low Competency (Waitlist)"
+      return "Failed (Waitlist)"
     case "rejected":
-      return "Low Competency (Rejected)"
+      return "Failed (Rejected)"
     case "placement_waitlist":
       return "Pending placement"
     case "recommended":
-      return isHigh ? "High Competency (Recommended)" : "Low Competency (Recommended)"
+      return isHigh ? "Passed (Recommended)" : "Failed (Recommended)"
     default:
       return status
   }

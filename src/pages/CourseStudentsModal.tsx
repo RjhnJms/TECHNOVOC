@@ -65,7 +65,7 @@ export default function CourseStudentsModal({ course, onClose }: Props) {
 
   const exportCSV = () => {
     const csv = [
-      `Rank,Full Name,LRN,School Year,Phone,Score (/${QUESTIONS_PER_TRACK}),Competency`,
+      `Rank,Full Name,LRN,School Year,Phone,Score (/${QUESTIONS_PER_TRACK}),Status`,
       ...filtered.map(s =>
         `${s.rank},${s.students?.full_name || ""},${s.students?.lrn || ""},${s.students?.school_year || ""},${s.students?.phone_number || ""},${s.score},${getRankingStatusLabel(s.status, s.score)}`
       )
@@ -91,7 +91,7 @@ export default function CourseStudentsModal({ course, onClose }: Props) {
             </h2>
             <p style={{ color: "#6b7280", fontSize: "13px", margin: 0 }}>
               Capacity: {course.capacity} slots &nbsp;•&nbsp;
-              <span style={{ color: "#16a34a", fontWeight: "600" }}>{passed} High Competency</span> &nbsp;•&nbsp;
+              <span style={{ color: "#16a34a", fontWeight: "600" }}>{passed} Passed</span> &nbsp;•&nbsp;
               <span style={{ color: "#f59e0b", fontWeight: "600" }}>{waitlist} Waitlist</span> &nbsp;•&nbsp;
               <span style={{ color: "#dc2626", fontWeight: "600" }}>{rejected} Rejected</span>
             </p>
@@ -118,7 +118,7 @@ export default function CourseStudentsModal({ course, onClose }: Props) {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "16px" }}>
             {[
               { label: "Total", value: students.length, color: "#2563eb" },
-              { label: "High Competency", value: passed, color: "#16a34a" },
+              { label: "Passed", value: passed, color: "#16a34a" },
               { label: "Waitlist", value: waitlist, color: "#f59e0b" },
               { label: "Rejected", value: rejected, color: "#dc2626" },
             ].map(stat => (
@@ -156,7 +156,7 @@ export default function CourseStudentsModal({ course, onClose }: Props) {
                   {f === "all"
                     ? `All (${students.length})`
                     : f === "included"
-                      ? `High Competency (${passed})`
+                      ? `Passed (${passed})`
                       : f === "waitlist"
                         ? `Waitlist (${waitlist})`
                         : `Rejected (${rejected})`}
@@ -180,7 +180,7 @@ export default function CourseStudentsModal({ course, onClose }: Props) {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
               <thead>
                 <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
-                  {["Rank", "Full Name", "LRN", "School Year", "Score", "Competency"].map(h => (
+                  {["Rank", "Full Name", "LRN", "School Year", "Score", "Status"].map(h => (
                     <th key={h} style={{ textAlign: "left", padding: "9px 12px", color: "#6b7280", fontWeight: "600" }}>{h}</th>
                   ))}
                 </tr>

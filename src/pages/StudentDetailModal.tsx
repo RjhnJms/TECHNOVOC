@@ -2,7 +2,11 @@ import { useState, useEffect } from "react"
 import { supabase } from "../supabaseClient"
 import { printStudentResults } from "./printResults"
 import AssignCoursePanel from "../components/AssignCoursePanel"
-import { computeTop3Recommendations } from "../utils/studentRecommendations"
+import {
+  computeTop3Recommendations,
+  needsPlacementWaitlist,
+  saveStudentRecommendations,
+} from "../utils/studentRecommendations"
 import { isPassingScore, QUESTIONS_PER_TRACK } from "../utils/trackRanking"
 
 interface Props {
@@ -26,34 +30,36 @@ interface AssessmentResult {
   courses?: { course_name: string }
 }
 
-interface Top3Item {
-  course_id: string
-  course_name: string
-  score: number
-  rank: number
-}
-
 interface Course {
   id: string
   course_name: string
+  capacity?: number
+}
+
+interface Top3BestScore {
+  courseId: string
+  score: number
+  courseName: string
 }
 
 export default function StudentDetailModal({ student, onClose }: Props) {
   const [assessments, setAssessments] = useState<AssessmentResult[]>([])
   const [preferredScores, setPreferredScores] = useState<AssessmentResult[]>([])
   const [preferredCourseIds, setPreferredCourseIds] = useState<string[]>([])
-  const [top3, setTop3] = useState<Top3Item[]>([])
   const [rankings, setRankings] = useState<any[]>([])
   const [allPreferredPassed, setAllPreferredPassed] = useState(false)
+  const [onPlacementWaitlist, setOnPlacementWaitlist] = useState(false)
   const [placementRankingId, setPlacementRankingId] = useState<string | null>(null)
   const [assignedCourseName, setAssignedCourseName] = useState<string | null>(null)
+  const [autoPlacedCourseName, setAutoPlacedCourseName] = useState<string | null>(null)
   const [courses, setCourses] = useState<Course[]>([])
+  const [enrolledCountByCourse, setEnrolledCountByCourse] = useState<Record<string, number>>({})
+  const [top3BestScores, setTop3BestScores] = useState<Top3BestScore[]>([])
   const [loading, setLoading] = useState(true)
-  const [showRecommendations, setShowRecommendations] = useState(false)
 
   const load = async () => {
       setLoading(true)
-      const [aData, pData, rData, cData] = await Promise.all([
+      const [aData, pData, rData, cData, enrolledData] = await Promise.all([
         supabase
           .from("assessments")
           .select("*, courses(course_name)")
@@ -69,21 +75,51 @@ export default function StudentDetailModal({ student, onClose }: Props) {
           .select("*, courses(course_name, capacity)")
           .eq("student_id", student.id)
           .order("rank", { ascending: true }),
-        supabase.from("courses").select("id, course_name").order("course_name"),
+        supabase.from("courses").select("id, course_name, capacity").order("course_name"),
+        supabase.from("rankings").select("course_id").eq("status", "included"),
       ])
 
       const rows = (aData.data || []) as AssessmentResult[]
       const prefIds = (pData.data || []).map(p => p.course_id)
+      const courseRows = cData.data || []
       setAssessments(rows)
       setPreferredCourseIds(prefIds)
-      setCourses(cData.data || [])
+      setCourses(courseRows)
 
-      const rankRows = rData.data || []
-      const placementRow = rankRows.find(r => r.status === "waitlist" && !r.course_id)
+      const countMap: Record<string, number> = {}
+      for (const r of enrolledData.data || []) {
+        if (r.course_id) countMap[r.course_id] = (countMap[r.course_id] || 0) + 1
+      }
+      setEnrolledCountByCourse(countMap)
+
+      const scoreInputs = rows.map(a => ({
+        course_id: a.course_id,
+        score: a.score,
+        total_items: a.total_items,
+      }))
+      const needsPlacement = needsPlacementWaitlist(scoreInputs, prefIds)
+
+      let rankRows = rData.data || []
+      let placementRow = rankRows.find(r => r.status === "waitlist" && !r.course_id)
+
+      if (needsPlacement && !placementRow) {
+        await saveStudentRecommendations(student.id, scoreInputs, prefIds)
+        const { data: refreshed } = await supabase
+          .from("rankings")
+          .select("*, courses(course_name, capacity)")
+          .eq("student_id", student.id)
+          .order("rank", { ascending: true })
+        rankRows = refreshed || []
+        placementRow = rankRows.find(r => r.status === "waitlist" && !r.course_id)
+      }
+
       setPlacementRankingId(placementRow?.id ?? null)
 
       const manualAssign = rankRows.find(
-        r => r.status === "included" && r.course_id && !prefIds.includes(r.course_id)
+        r =>
+          r.status === "included" &&
+          r.course_id &&
+          !prefIds.includes(r.course_id)
       )
       if (manualAssign?.courses) {
         const c = manualAssign.courses as { course_name?: string }
@@ -92,14 +128,17 @@ export default function StudentDetailModal({ student, onClose }: Props) {
         setAssignedCourseName(null)
       }
 
-      const computed = computeTop3Recommendations(
-        rows.map(a => ({
-          course_id: a.course_id,
-          score: a.score,
-          total_items: a.total_items,
-        })),
-        prefIds
+      const autoPlaced = rankRows.find(
+        r => r.status === "included" && r.course_id && prefIds.includes(r.course_id)
       )
+      if (autoPlaced?.courses) {
+        const c = autoPlaced.courses as { course_name?: string }
+        setAutoPlacedCourseName(c.course_name ?? null)
+      } else {
+        setAutoPlacedCourseName(null)
+      }
+
+      const computed = computeTop3Recommendations(scoreInputs, prefIds)
 
       const passedAll = computed[0]?.fromPreferredCourses ?? false
       setAllPreferredPassed(passedAll)
@@ -109,23 +148,27 @@ export default function StudentDetailModal({ student, onClose }: Props) {
         prefIds
           .map(id => scoreByCourse.get(id))
           .filter((a): a is AssessmentResult => !!a)
+          .sort((a, b) => b.score - a.score)
       )
 
-      const nameById = Object.fromEntries((cData.data || []).map(c => [c.id, c.course_name]))
+      const nameById = Object.fromEntries(courseRows.map(c => [c.id, c.course_name]))
 
-      setTop3(
-        computed.map(c => ({
-          course_id: c.course_id,
-          course_name: nameById[c.course_id] || "Unknown",
-          score: c.score,
-          rank: c.rank,
-        }))
+      setTop3BestScores(
+        rows
+          .filter(a => !prefIds.includes(a.course_id))
+          .map(a => ({
+            courseId: a.course_id,
+            score: a.score,
+            courseName: a.courses?.course_name || nameById[a.course_id] || "Unknown",
+          }))
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 3)
       )
 
       if (rankRows.length > 0) {
         setRankings(rankRows.filter(r => !(r.status === "waitlist" && !r.course_id)))
       } else if (computed.length > 0) {
-        const courseById = Object.fromEntries((cData.data || []).map(c => [c.id, c]))
+        const courseById = Object.fromEntries(courseRows.map(c => [c.id, c]))
         setRankings(computed.map((c, i) => ({
           id: `computed-${i}`,
           score: c.score,
@@ -139,16 +182,14 @@ export default function StudentDetailModal({ student, onClose }: Props) {
         setRankings([])
       }
 
+      setOnPlacementWaitlist(needsPlacement && !manualAssign)
       setLoading(false)
   }
 
   useEffect(() => {
     void load()
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        if (showRecommendations) setShowRecommendations(false)
-        else onClose()
-      }
+      if (e.key === "Escape") onClose()
     }
     window.addEventListener("keydown", handler)
     return () => window.removeEventListener("keydown", handler)
@@ -230,9 +271,16 @@ export default function StudentDetailModal({ student, onClose }: Props) {
             }}
           >
             <div>
-              <h2 style={{ fontWeight: "800", fontSize: "20px", margin: "0 0 4px" }}>
-                {student.full_name}
-              </h2>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", marginBottom: "4px" }}>
+                <h2 style={{ fontWeight: "800", fontSize: "20px", margin: 0 }}>
+                  {student.full_name}
+                </h2>
+                {!loading && assessments.length > 0 && onPlacementWaitlist && !assignedCourseName && (
+                  <span style={{ backgroundColor: "#f3e8ff", color: "#7c3aed", padding: "3px 10px", borderRadius: "20px", fontSize: "12px", fontWeight: "700" }}>
+                    Waitlist
+                  </span>
+                )}
+              </div>
               <div style={{ display: "flex", gap: "16px", fontSize: "13px", color: "#6b7280" }}>
                 <span>
                   LRN: <strong>{student.lrn}</strong>
@@ -295,7 +343,7 @@ export default function StudentDetailModal({ student, onClose }: Props) {
                 </div>
                 <p style={{ fontWeight: "700", margin: "0 0 12px" }}>Preferred course scores</p>
                 <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                  {preferredScores.map((a, i) => {
+                  {preferredScores.map((a) => {
                     const passed = isPassingScore(a.score, a.total_items)
                     return (
                       <div
@@ -312,7 +360,7 @@ export default function StudentDetailModal({ student, onClose }: Props) {
                       >
                         <div>
                           <p style={{ margin: 0, fontWeight: "700" }}>
-                            #{i + 1} {a.courses?.course_name}
+                            #{preferredCourseIds.indexOf(a.course_id) + 1} {a.courses?.course_name}
                           </p>
                           <p style={{ margin: "4px 0 0", fontSize: "13px", color: "#6b7280" }}>
                             Preferred course
@@ -340,7 +388,7 @@ export default function StudentDetailModal({ student, onClose }: Props) {
                   })}
                 </div>
               </>
-            ) : (
+            ) : onPlacementWaitlist ? (
               <div style={{ padding: "8px 0" }}>
                 {assignedCourseName ? (
                   <div style={{ backgroundColor: "#f0fdf4", border: "2px solid #16a34a", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
@@ -348,23 +396,74 @@ export default function StudentDetailModal({ student, onClose }: Props) {
                     <p style={{ margin: 0, fontSize: "18px", fontWeight: "800" }}>{assignedCourseName}</p>
                   </div>
                 ) : (
-                  <div style={{ marginBottom: "16px" }}>
-                    <AssignCoursePanel
-                      studentId={student.id}
-                      studentName={student.full_name}
-                      rankingId={placementRankingId}
-                      preferredCourseIds={preferredCourseIds}
-                      courses={courses}
-                      examScoreByCourseId={Object.fromEntries(
-                        assessments.map(a => [a.course_id, a.score])
-                      )}
-                      onAssigned={() => { void load() }}
-                    />
-                  </div>
+                  <>
+                    <div style={{ backgroundColor: "#faf5ff", border: "1px solid #e9d5ff", borderRadius: "12px", padding: "14px 16px", marginBottom: "16px" }}>
+                      <p style={{ fontWeight: "700", color: "#5b21b6", margin: "0 0 4px" }}>Pending placement</p>
+                      <p style={{ color: "#6b7280", fontSize: "13px", margin: 0, lineHeight: 1.5 }}>
+                        This student did not pass (6+/10) on any of their 3 preferred courses and is on the waitlist.
+                        Assign them to one of their top 3 highest-scoring tracks below.
+                      </p>
+                    </div>
+                    <div style={{ marginBottom: "16px" }}>
+                      <p style={{ fontSize: "12px", fontWeight: "600", color: "#15803d", margin: "0 0 8px" }}>
+                        Top 3 highest scores (assign here if slots available):
+                      </p>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "16px" }}>
+                        {top3BestScores.map(({ courseId, score, courseName }, idx) => {
+                          const enrolled = enrolledCountByCourse[courseId] || 0
+                          const capacity = courses.find(c => c.id === courseId)?.capacity ?? 0
+                          const slotsLeft = Math.max(0, capacity - enrolled)
+                          const hasSlots = slotsLeft > 0
+                          const isPreferred = preferredCourseIds.includes(courseId)
+                          return (
+                            <div
+                              key={courseId}
+                              style={{
+                                backgroundColor: hasSlots ? "#f0fdf4" : "#fef2f2",
+                                border: `1px solid ${hasSlots ? "#86efac" : "#fca5a5"}`,
+                                borderRadius: "10px",
+                                padding: "8px 14px",
+                                minWidth: "140px",
+                              }}
+                            >
+                              <p style={{ margin: "0 0 2px", fontWeight: "700", fontSize: "13px" }}>
+                                #{idx + 1} {courseName}
+                              </p>
+                              <p style={{ margin: "0 0 2px", fontSize: "12px", color: "#2563eb", fontWeight: "700" }}>
+                                Score: {score}/{QUESTIONS_PER_TRACK}
+                              </p>
+                              <p style={{ margin: 0, fontSize: "11px", color: hasSlots ? "#16a34a" : "#dc2626", fontWeight: "600" }}>
+                                {hasSlots ? `${slotsLeft} slot${slotsLeft === 1 ? "" : "s"} available` : "Full — no slots"}
+                              </p>
+                              {isPreferred && (
+                                <p style={{ margin: "2px 0 0", fontSize: "10px", color: "#7c3aed", fontWeight: "600" }}>
+                                  Was preferred (still assignable)
+                                </p>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                      <AssignCoursePanel
+                        studentId={student.id}
+                        studentName={student.full_name}
+                        rankingId={placementRankingId}
+                        preferredCourseIds={preferredCourseIds}
+                        courses={courses}
+                        examScoreByCourseId={Object.fromEntries(
+                          assessments.map(a => [a.course_id, a.score])
+                        )}
+                        allowedCourseIds={top3BestScores.map(e => e.courseId)}
+                        enrolledCountById={enrolledCountByCourse}
+                        capacityById={Object.fromEntries(courses.map(c => [c.id, c.capacity ?? 0]))}
+                        onAssigned={() => { void load() }}
+                      />
+                    </div>
+                  </>
                 )}
                 <p style={{ fontWeight: "700", margin: "0 0 12px" }}>Preferred course scores</p>
-                <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "16px" }}>
-                  {preferredScores.map((a, i) => {
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  {preferredScores.map((a) => {
                     const passed = isPassingScore(a.score, a.total_items)
                     return (
                       <div
@@ -379,7 +478,7 @@ export default function StudentDetailModal({ student, onClose }: Props) {
                           border: "1px solid #e5e7eb",
                         }}
                       >
-                        <p style={{ margin: 0, fontWeight: "700" }}>#{i + 1} {a.courses?.course_name}</p>
+                        <p style={{ margin: 0, fontWeight: "700" }}>#{preferredCourseIds.indexOf(a.course_id) + 1} {a.courses?.course_name}</p>
                         <span
                           style={{
                             fontSize: "12px",
@@ -396,130 +495,58 @@ export default function StudentDetailModal({ student, onClose }: Props) {
                     )
                   })}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setShowRecommendations(true)}
-                  style={{
-                    padding: "10px 20px",
-                    backgroundColor: "#2563eb",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "8px",
-                    cursor: "pointer",
-                    fontWeight: "600",
-                  }}
-                >
-                  View exam score breakdown
-                </button>
+              </div>
+            ) : (
+              <div style={{ padding: "8px 0" }}>
+                {autoPlacedCourseName && (
+                  <div style={{ backgroundColor: "#eff6ff", border: "2px solid #2563eb", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
+                    <p style={{ fontWeight: "700", color: "#1d4ed8", margin: "0 0 4px" }}>Auto-placed course</p>
+                    <p style={{ margin: 0, fontSize: "18px", fontWeight: "800" }}>{autoPlacedCourseName}</p>
+                    <p style={{ color: "#6b7280", fontSize: "13px", margin: "8px 0 0" }}>
+                      Placed in their highest-scoring preferred course that passed.
+                    </p>
+                  </div>
+                )}
+                <p style={{ fontWeight: "700", margin: "0 0 12px" }}>Preferred course scores</p>
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  {preferredScores.map((a) => {
+                    const passed = isPassingScore(a.score, a.total_items)
+                    return (
+                      <div
+                        key={a.id}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          padding: "14px 16px",
+                          borderRadius: "10px",
+                          backgroundColor: "#f9fafb",
+                          border: "1px solid #e5e7eb",
+                        }}
+                      >
+                        <p style={{ margin: 0, fontWeight: "700" }}>#{preferredCourseIds.indexOf(a.course_id) + 1} {a.courses?.course_name}</p>
+                        <span
+                          style={{
+                            fontSize: "12px",
+                            fontWeight: "600",
+                            padding: "4px 10px",
+                            borderRadius: "12px",
+                            backgroundColor: passed ? "#dcfce7" : "#fef2f2",
+                            color: passed ? "#16a34a" : "#dc2626",
+                          }}
+                        >
+                          {a.score}/{a.total_items || QUESTIONS_PER_TRACK} — {passed ? "Passed" : "Failed"}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {showRecommendations && top3.length > 0 && (
-        <div
-          onClick={e => {
-            if (e.target === e.currentTarget) setShowRecommendations(false)
-          }}
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(0,0,0,0.65)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1100,
-            padding: "20px",
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "white",
-              borderRadius: "16px",
-              width: "100%",
-              maxWidth: "480px",
-              padding: "28px",
-              boxShadow: "0 24px 64px rgba(0,0,0,0.35)",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px" }}>
-              <div>
-                <h3 style={{ fontWeight: "800", fontSize: "18px", margin: "0 0 4px" }}>
-                  Top 3 recommended courses
-                </h3>
-                <p style={{ color: "#6b7280", fontSize: "13px", margin: 0 }}>
-                  Based on highest scores across different courses
-                </p>
-              </div>
-              <button
-                onClick={() => setShowRecommendations(false)}
-                style={{
-                  background: "none",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: "8px",
-                  width: "32px",
-                  height: "32px",
-                  cursor: "pointer",
-                  color: "#6b7280",
-                }}
-              >
-                ✕
-              </button>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-              {top3.map((r, i) => (
-                <div
-                  key={r.course_id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "14px",
-                    padding: "14px 16px",
-                    borderRadius: "10px",
-                    backgroundColor: i === 0 ? "#fffbeb" : "#f9fafb",
-                    border: `1px solid ${i === 0 ? "#fcd34d" : "#e5e7eb"}`,
-                  }}
-                >
-                  <span
-                    style={{
-                      fontWeight: "800",
-                      fontSize: "16px",
-                      color: i === 0 ? "#d97706" : "#6b7280",
-                      minWidth: "28px",
-                    }}
-                  >
-                    #{r.rank}
-                  </span>
-                  <div style={{ flex: 1 }}>
-                    <p style={{ fontWeight: "700", margin: 0 }}>{r.course_name}</p>
-                  </div>
-                  <p style={{ fontWeight: "800", color: "#2563eb", margin: 0 }}>
-                    {r.score} / {QUESTIONS_PER_TRACK}
-                  </p>
-                </div>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowRecommendations(false)}
-              style={{
-                width: "100%",
-                marginTop: "20px",
-                padding: "12px",
-                backgroundColor: "#111827",
-                color: "white",
-                border: "none",
-                borderRadius: "8px",
-                cursor: "pointer",
-                fontWeight: "600",
-              }}
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
     </>
   )
 }

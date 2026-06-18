@@ -35,11 +35,11 @@ export function printStudentResults(opts: PrintResultsOptions) {
 
   const statusLabel = (s?: string, score?: number) => {
     const isHigh = score !== undefined ? score >= 6 : true
-    if (s === "included") return isHigh ? "High Competency" : "Low Competency (Placed)"
-    if (s === "waitlist") return "Low Competency (Waitlist)"
-    if (s === "rejected") return "Low Competency (Rejected)"
+    if (s === "included") return isHigh ? "Passed (Placed)" : "Failed (Placed)"
+    if (s === "waitlist") return "Failed (Waitlist)"
+    if (s === "rejected") return "Failed (Rejected)"
     if (s === "placement_waitlist") return "Pending Placement"
-    if (s === "recommended") return isHigh ? "High Competency (Recommended)" : "Low Competency (Recommended)"
+    if (s === "recommended") return isHigh ? "Passed (Recommended)" : "Failed (Recommended)"
     return s || "—"
   }
 
@@ -140,7 +140,7 @@ export function printStudentResults(opts: PrintResultsOptions) {
     <div class="section-title">Top 3 Course Recommendations & Placement</div>
     <table>
       <thead>
-        <tr><th>Rank</th><th>Course</th><th>Score</th><th>Competency Status</th></tr>
+        <tr><th>Rank</th><th>Course</th><th>Score</th><th>Status</th></tr>
       </thead>
       <tbody>${rankingRows}</tbody>
     </table>

@@ -2,9 +2,10 @@ import { useState } from "react"
 import { supabase } from "../supabaseClient"
 import logo from "../assets/NAVS LOGO.svg"
 import type { UserSession } from "../types/session"
-import { generateSchoolYears } from "../utils/schoolYear"
+import { generateSchoolYears, getSchoolYearFromDate, getStartYear } from "../utils/schoolYear"
 
-const schoolYearOptions = generateSchoolYears(2023, 1).reverse()
+const currentStart = getStartYear(getSchoolYearFromDate())
+const schoolYearOptions = generateSchoolYears(currentStart, 0)
 
 
 type StudentMode = "login" | "signup"

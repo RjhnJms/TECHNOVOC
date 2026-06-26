@@ -1,7 +1,10 @@
 import { useState, useEffect } from "react"
 import { supabase } from "../supabaseClient"
 import { isLabAccessCodeRequired } from "../utils/examAccessCode"
-import { ClipboardList, CheckCircle2, Clock, GraduationCap, Loader2, RefreshCw, Users } from "lucide-react"
+import { ClipboardList, CheckCircle2, Clock, GraduationCap, RefreshCw, Users } from "lucide-react"
+import { SkeletonStatCard, SkeletonStatCardHorizontal } from "../components/Skeleton"
+import { getStartYear } from "../utils/schoolYear"
+
 
 interface OverviewStats {
   totalStudents: number
@@ -31,7 +34,11 @@ interface RankEntry {
   courses: { course_name: string } | { course_name: string }[] | null
 }
 
-export default function OverviewTab() {
+interface Props {
+  schoolYearFilter: string
+}
+
+export default function OverviewTab({ schoolYearFilter }: Props) {
   const [stats, setStats] = useState<OverviewStats>({
     totalStudents: 0,
     totalAssessments: 0,
@@ -51,58 +58,61 @@ export default function OverviewTab() {
   })
   const [loading, setLoading] = useState(true)
   const [lastUpdated, setLastUpdated] = useState<string>("")
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { fetchStats() }, [])
+  
+  useEffect(() => {
+    fetchStats()
+  }, [schoolYearFilter])
 
   const fetchStats = async () => {
     setLoading(true)
 
-    const { count: totalStudents } = await supabase
+    const filterYearStart = schoolYearFilter !== "all" ? getStartYear(schoolYearFilter) : Infinity
+
+    const { data: studentsData } = await supabase
       .from("students")
-      .select("*", { count: "exact", head: true })
+      .select("id, school_year")
 
-    const { data: assessedForCount } = await supabase
-      .from("assessments")
-      .select("student_id")
-    const totalAssessments = new Set(assessedForCount?.map(a => a.student_id)).size
+    const filteredStudents = (studentsData || []).filter(s => {
+      if (schoolYearFilter === "all") return true
+      const studentYearStart = s.school_year ? getStartYear(s.school_year) : 0
+      return studentYearStart <= filterYearStart
+    })
 
-    const { data: qualifiedData } = await supabase
-      .from("assessments")
-      .select("student_id")
-      .eq("passed", true)
-    const qualified = new Set(qualifiedData?.map(a => a.student_id)).size
+    const filteredStudentIds = new Set(filteredStudents.map(s => s.id))
+    const totalStudents = filteredStudents.length
 
-    const { data: assessedStudentData } = await supabase
-      .from("assessments")
-      .select("student_id")
-    const assessedStudentIds = new Set(assessedStudentData?.map(a => a.student_id))
-    const notYetAssessed = (totalStudents || 0) - assessedStudentIds.size
+    const [{ data: assessmentData }, { data: rankData }, { data: allCourses }] = await Promise.all([
+      supabase
+        .from("assessments")
+        .select("student_id, course_id, passed, courses(course_name)"),
+      supabase
+        .from("rankings")
+        .select("student_id, course_id, status, courses(course_name)"),
+      supabase
+        .from("courses")
+        .select("capacity"),
+    ])
 
-    const { data: allCourses } = await supabase
-      .from("courses")
-      .select("capacity")
+    const filteredAssessments = (assessmentData || []).filter(a => filteredStudentIds.has(a.student_id))
+    const totalAssessments = new Set(filteredAssessments.map(a => a.student_id)).size
+
+    const qualified = new Set(filteredAssessments.filter(a => a.passed).map(a => a.student_id)).size
+
+    const assessedStudentIds = new Set(filteredAssessments.map(a => a.student_id))
+    const notYetAssessed = totalStudents - assessedStudentIds.size
+
     const totalCapacity = allCourses?.reduce((sum, c) => sum + (c.capacity || 0), 0) || 0
 
     const passingRate = totalAssessments > 0
       ? Math.round((qualified / totalAssessments) * 100)
       : 0
 
-    const { count: totalEnrolled } = await supabase
-      .from("rankings")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "included")
-
-    const { count: totalWaitlist } = await supabase
-      .from("rankings")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "waitlist")
-
-    const { data: courseData } = await supabase
-      .from("assessments")
-      .select("course_id, passed, courses(course_name)")
+    const filteredRankings = (rankData || []).filter(r => filteredStudentIds.has(r.student_id))
+    const totalEnrolled = filteredRankings.filter(r => r.status === "included").length
+    const totalWaitlist = filteredRankings.filter(r => r.status === "waitlist").length
 
     const courseMap: Record<string, { course_name: string; count: number; passed: number }> = {}
-    courseData?.forEach((a) => {
+    filteredAssessments.forEach((a) => {
       const entry = a as unknown as AssessmentEntry
       let name = "Unknown"
       if (entry.courses) {
@@ -117,13 +127,9 @@ export default function OverviewTab() {
       if (entry.passed) courseMap[name].passed += 1
     })
 
-    const { data: rankData } = await supabase
-      .from("rankings")
-      .select("course_id, status, courses(course_name)")
-
     const enrolledMap: Record<string, number> = {}
     const waitlistMap: Record<string, number> = {}
-    rankData?.forEach((r) => {
+    filteredRankings.forEach((r) => {
       const entry = r as unknown as RankEntry
       let name = "Unknown"
       if (entry.courses) {
@@ -165,19 +171,16 @@ export default function OverviewTab() {
       mostQualifiedCourse = sortedByCount[0]?.course_name || "—"
     }
 
-    const availableSlots = totalCapacity - (totalEnrolled || 0)
+    const availableSlots = totalCapacity - totalEnrolled
 
     const labCodesRequired = await isLabAccessCodeRequired()
     let notAssessedNeedCode = 0
     let notAssessedWithCode = 0
 
     if (labCodesRequired && notYetAssessed > 0) {
-      const [{ data: redemptions }, { data: allStudents }] = await Promise.all([
-        supabase.from("exam_access_code_redemptions").select("student_id"),
-        supabase.from("students").select("id"),
-      ])
+      const { data: redemptions } = await supabase.from("exam_access_code_redemptions").select("student_id")
       const redeemedStudentIds = new Set((redemptions || []).map(r => r.student_id))
-      for (const s of allStudents || []) {
+      for (const s of filteredStudents) {
         if (assessedStudentIds.has(s.id)) continue
         if (redeemedStudentIds.has(s.id)) notAssessedWithCode++
         else notAssessedNeedCode++
@@ -185,17 +188,17 @@ export default function OverviewTab() {
     }
 
     setStats({
-      totalStudents: totalStudents || 0,
-      totalAssessments: totalAssessments || 0,
-      qualified: qualified || 0,
+      totalStudents,
+      totalAssessments,
+      qualified,
       passingRate,
       notYetAssessed: notYetAssessed > 0 ? notYetAssessed : 0,
       availableSlots: availableSlots > 0 ? availableSlots : 0,
       totalCapacity,
       mostQualifiedCourse,
       mostQualifiedCount,
-      totalEnrolled: totalEnrolled || 0,
-      totalWaitlist: totalWaitlist || 0,
+      totalEnrolled,
+      totalWaitlist,
       courseBreakdown,
       labCodesRequired,
       notAssessedNeedCode,
@@ -239,22 +242,17 @@ export default function OverviewTab() {
           disabled={loading}
           style={{ padding: "10px 16px", backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "14px" }}
         >
-          {loading ? (
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-              <Loader2 size={16} />
-              Loading...
-            </span>
-          ) : (
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-              <RefreshCw size={16} />
-              Refresh
-            </span>
-          )}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <RefreshCw size={16} />
+            {loading ? "Loading..." : "Refresh"}
+          </span>
         </button>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", marginBottom: "24px" }}>
-        {[
+        {loading ? (
+          <>{[0,1,2].map(i => <SkeletonStatCard key={i} />)}</>
+        ) : [
           { label: "Total Students", value: stats.totalStudents, icon: <Users size={22} />, color: "#2563eb", bg: "#eff6ff", sub: "registered students" },
           { label: "Not Yet Assessed", value: stats.notYetAssessed, icon: <ClipboardList size={22} />, color: "#dc2626", bg: "#fef2f2", sub: notYetAssessedSub() },
           { label: "Available Slots", value: stats.availableSlots, icon: <CheckCircle2 size={22} />, color: "#16a34a", bg: "#f0fdf4", sub: `of ${stats.totalCapacity} total capacity` },
@@ -265,15 +263,17 @@ export default function OverviewTab() {
               <span>{stat.icon}</span>
             </div>
             <h2 style={{ color: stat.color, fontSize: "30px", margin: "0 0 4px", fontWeight: "800", lineHeight: 1.1 }}>
-              {loading ? "—" : stat.value}
+              {stat.value}
             </h2>
-            <p style={{ color: "#9ca3af", fontSize: "12px", margin: 0 }}>{loading ? "..." : stat.sub}</p>
+            <p style={{ color: "#9ca3af", fontSize: "12px", margin: 0 }}>{stat.sub}</p>
           </div>
         ))}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", marginBottom: "24px" }}>
-        {[
+        {loading ? (
+          <>{[0,1,2].map(i => <SkeletonStatCardHorizontal key={i} />)}</>
+        ) : [
           { label: "Students Assessed", value: stats.totalAssessments, icon: <ClipboardList size={22} />, color: "#0891b2" },
           { label: "Qualified", value: stats.totalEnrolled, icon: <GraduationCap size={22} />, color: "#16a34a" },
           { label: "On Waitlist", value: stats.totalWaitlist, icon: <Clock size={22} />, color: "#f59e0b" },
@@ -285,7 +285,7 @@ export default function OverviewTab() {
             <div>
               <p style={{ color: "#6b7280", fontSize: "13px", margin: "0 0 4px" }}>{stat.label}</p>
               <h3 style={{ color: stat.color, fontSize: "24px", margin: 0, fontWeight: "800" }}>
-                {loading ? "—" : stat.value}
+                {stat.value}
               </h3>
             </div>
           </div>

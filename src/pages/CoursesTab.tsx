@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react"
 import { supabase } from "../supabaseClient"
-import { BookOpen, HelpCircle, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react"
+import { HelpCircle, Plus, RefreshCw, Trash2 } from "lucide-react"
+import { CourseIcon } from "../utils/courseIcons"
+import { SkeletonTableRows } from "../components/Skeleton"
 import CourseQuestionsModal from "./CourseQuestionsModal"
 import ConfirmDialog from "../components/ConfirmDialog"
 import {
@@ -172,9 +174,19 @@ export default function CoursesTab() {
 
       <div style={{ backgroundColor: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
         {loading ? (
-          <div style={{ textAlign: "center", padding: "60px 0", color: "#6b7280" }}>
-            <Loader2 size={32} style={{ marginBottom: "8px" }} />
-            <p>Loading courses...</p>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
+              <thead>
+                <tr style={{ borderBottom: "2px solid #e5e7eb", backgroundColor: "#f9fafb" }}>
+                  {["Course", "Question bank", "Exam draw", "Bank status", "Capacity", "Actions"].map(h => (
+                    <th key={h} style={{ textAlign: "left", padding: "12px 16px", color: "#6b7280", fontWeight: "600" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <SkeletonTableRows columns={6} rows={6} />
+              </tbody>
+            </table>
           </div>
         ) : filtered.length === 0 ? (
           <p style={{ textAlign: "center", color: "#9ca3af", padding: "48px 0" }}>
@@ -193,8 +205,8 @@ export default function CoursesTab() {
               {filtered.map((course, i) => (
                 <tr key={course.id} style={{ borderBottom: "1px solid #f3f4f6", backgroundColor: i % 2 === 0 ? "white" : "#fafafa" }}>
                   <td style={{ padding: "14px 16px", fontWeight: "600" }}>
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                      <BookOpen size={16} color="#6b7280" />
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+                      <CourseIcon courseName={course.course_name} size={16} circleSize={32} />
                       {course.course_name}
                     </span>
                   </td>

@@ -9,6 +9,8 @@ import {
   saveStudentRecommendations,
 } from "../utils/studentRecommendations"
 import { isPassingScore, QUESTIONS_PER_TRACK } from "../utils/trackRanking"
+import { CourseIcon } from "../utils/courseIcons"
+import { SkeletonStudentDetail } from "../components/Skeleton"
 
 interface Props {
   student: {
@@ -390,7 +392,7 @@ export default function StudentDetailModal({ student, onClose }: Props) {
 
           <div style={{ padding: "24px 28px" }}>
             {loading ? (
-              <p style={{ textAlign: "center", color: "#6b7280", padding: "40px 0" }}>Loading...</p>
+              <SkeletonStudentDetail />
             ) : assessments.length === 0 ? (
               <div style={{ textAlign: "center", padding: "40px 0" }}>
                 <p style={{ fontSize: "40px", margin: "0 0 12px" }}>📋</p>
@@ -433,10 +435,11 @@ export default function StudentDetailModal({ student, onClose }: Props) {
                         }}
                       >
                         <div>
-                          <p style={{ margin: 0, fontWeight: "700", textTransform: "capitalize" }}>
+                          <p style={{ margin: 0, fontWeight: "700", textTransform: "capitalize", display: "flex", alignItems: "center", gap: 8 }}>
+                            <CourseIcon courseName={a.courses?.course_name || ""} size={14} circleSize={28} />
                             {getChoiceLabel(preferredCourseIds.indexOf(a.course_id))}: {a.courses?.course_name}
                           </p>
-                          <p style={{ margin: "4px 0 0", fontSize: "13px", color: "#6b7280" }}>
+                          <p style={{ margin: "4px 0 0 36px", fontSize: "13px", color: "#6b7280" }}>
                             Preferred course
                           </p>
                         </div>
@@ -467,7 +470,10 @@ export default function StudentDetailModal({ student, onClose }: Props) {
                 {assignedCourseName ? (
                   <div style={{ backgroundColor: "#f0fdf4", border: "2px solid #16a34a", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
                     <p style={{ fontWeight: "700", color: "#15803d", margin: "0 0 4px" }}>Enrolled Course</p>
-                    <p style={{ margin: 0, fontSize: "18px", fontWeight: "800" }}>{assignedCourseName}</p>
+                    <p style={{ margin: 0, fontSize: "18px", fontWeight: "800", display: "flex", alignItems: "center", gap: 10 }}>
+                      <CourseIcon courseName={assignedCourseName} size={18} circleSize={36} />
+                      {assignedCourseName}
+                    </p>
                   </div>
                 ) : (
                   <>
@@ -499,7 +505,8 @@ export default function StudentDetailModal({ student, onClose }: Props) {
                                 minWidth: "140px",
                               }}
                             >
-                              <p style={{ margin: "0 0 2px", fontWeight: "700", fontSize: "13px" }}>
+                              <p style={{ margin: "0 0 2px", fontWeight: "700", fontSize: "13px", display: "flex", alignItems: "center", gap: 6 }}>
+                                <CourseIcon courseName={courseName} size={12} circleSize={22} />
                                 #{idx + 1} {courseName}
                               </p>
                               <p style={{ margin: "0 0 2px", fontSize: "12px", color: "#2563eb", fontWeight: "700" }}>
@@ -545,7 +552,8 @@ export default function StudentDetailModal({ student, onClose }: Props) {
                           border: "1px solid #e5e7eb",
                         }}
                       >
-                        <p style={{ margin: 0, fontWeight: "700", textTransform: "capitalize" }}>
+                        <p style={{ margin: 0, fontWeight: "700", textTransform: "capitalize", display: "flex", alignItems: "center", gap: 8 }}>
+                          <CourseIcon courseName={a.courses?.course_name || ""} size={14} circleSize={28} />
                           {getChoiceLabel(preferredCourseIds.indexOf(a.course_id))}: {a.courses?.course_name}
                         </p>
                         <span
@@ -570,13 +578,19 @@ export default function StudentDetailModal({ student, onClose }: Props) {
                 {assignedCourseName && (
                   <div style={{ backgroundColor: "#f0fdf4", border: "2px solid #16a34a", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
                     <p style={{ fontWeight: "700", color: "#15803d", margin: "0 0 4px" }}>Enrolled Course</p>
-                    <p style={{ margin: 0, fontSize: "18px", fontWeight: "800" }}>{assignedCourseName}</p>
+                    <p style={{ margin: 0, fontSize: "18px", fontWeight: "800", display: "flex", alignItems: "center", gap: 10 }}>
+                      <CourseIcon courseName={assignedCourseName} size={18} circleSize={36} />
+                      {assignedCourseName}
+                    </p>
                   </div>
                 )}
                 {autoPlacedCourseName && (
                   <div style={{ backgroundColor: "#eff6ff", border: "2px solid #2563eb", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
                     <p style={{ fontWeight: "700", color: "#1d4ed8", margin: "0 0 4px" }}>Auto-placed course</p>
-                    <p style={{ margin: 0, fontSize: "18px", fontWeight: "800" }}>{autoPlacedCourseName}</p>
+                    <p style={{ margin: 0, fontSize: "18px", fontWeight: "800", display: "flex", alignItems: "center", gap: 10 }}>
+                      <CourseIcon courseName={autoPlacedCourseName} size={18} circleSize={36} />
+                      {autoPlacedCourseName}
+                    </p>
                     <p style={{ color: "#6b7280", fontSize: "13px", margin: "8px 0 0" }}>
                       Placed in their highest-priority passing preferred course (1st choice first, then 2nd, then 3rd — score does not override choice order).
                     </p>
@@ -599,7 +613,8 @@ export default function StudentDetailModal({ student, onClose }: Props) {
                           border: "1px solid #e5e7eb",
                         }}
                       >
-                        <p style={{ margin: 0, fontWeight: "700", textTransform: "capitalize" }}>
+                        <p style={{ margin: 0, fontWeight: "700", textTransform: "capitalize", display: "flex", alignItems: "center", gap: 8 }}>
+                          <CourseIcon courseName={a.courses?.course_name || ""} size={14} circleSize={28} />
                           {getChoiceLabel(preferredCourseIds.indexOf(a.course_id))}: {a.courses?.course_name}
                         </p>
                         <span
@@ -650,7 +665,12 @@ export default function StudentDetailModal({ student, onClose }: Props) {
                         const passed = isPassingScore(a.score, total)
                         return (
                           <tr key={a.id} style={{ borderBottom: "1px solid #f3f4f6", backgroundColor: i % 2 === 0 ? "white" : "#f9fafb" }}>
-                            <td style={{ padding: "10px 12px", fontWeight: "700" }}>{a.courses?.course_name || "Unknown course"}</td>
+                            <td style={{ padding: "10px 12px", fontWeight: "700" }}>
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                                <CourseIcon courseName={a.courses?.course_name || ""} size={13} circleSize={26} />
+                                {a.courses?.course_name || "Unknown course"}
+                              </span>
+                            </td>
                             <td style={{ padding: "10px 12px", color: "#2563eb", fontWeight: "800" }}>{a.score} / {total}</td>
                             <td style={{ padding: "10px 12px" }}>
                               <span style={{

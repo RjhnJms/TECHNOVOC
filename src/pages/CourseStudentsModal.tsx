@@ -28,7 +28,7 @@ interface StudentRanking {
 export default function CourseStudentsModal({ course, onClose }: Props) {
   const [students, setStudents] = useState<StudentRanking[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<"all" | "included" | "waitlist" | "rejected">("all")
+  const [filter, setFilter] = useState<"all" | "included" | "capacity_waitlist" | "waitlist" | "rejected">("all")
   const [search, setSearch] = useState("")
   const [showExportConfirm, setShowExportConfirm] = useState(false)
 
@@ -60,6 +60,7 @@ export default function CourseStudentsModal({ course, onClose }: Props) {
   })
 
   const passed = students.filter(s => s.status === "included").length
+  const capacityWaitlist = students.filter(s => s.status === "capacity_waitlist").length
   const waitlist = students.filter(s => s.status === "waitlist").length
   const rejected = students.filter(s => s.status === "rejected").length
 
@@ -91,7 +92,8 @@ export default function CourseStudentsModal({ course, onClose }: Props) {
             </h2>
             <p style={{ color: "#6b7280", fontSize: "13px", margin: 0 }}>
               Capacity: {course.capacity} slots &nbsp;•&nbsp;
-              <span style={{ color: "#16a34a", fontWeight: "600" }}>{passed} Passed</span> &nbsp;•&nbsp;
+              <span style={{ color: "#16a34a", fontWeight: "600" }}>{passed} Placed</span> &nbsp;•&nbsp;
+              {capacityWaitlist > 0 && (<><span style={{ color: "#c2410c", fontWeight: "600" }}>{capacityWaitlist} Over Capacity</span> &nbsp;•&nbsp;</>)}
               <span style={{ color: "#f59e0b", fontWeight: "600" }}>{waitlist} Waitlist</span> &nbsp;•&nbsp;
               <span style={{ color: "#dc2626", fontWeight: "600" }}>{rejected} Rejected</span>
             </p>
@@ -115,10 +117,11 @@ export default function CourseStudentsModal({ course, onClose }: Props) {
         <div style={{ padding: "20px 28px" }}>
 
           {/* Stats Row */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "16px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "12px", marginBottom: "16px" }}>
             {[
               { label: "Total", value: students.length, color: "#2563eb" },
-              { label: "Passed", value: passed, color: "#16a34a" },
+              { label: "Placed", value: passed, color: "#16a34a" },
+              { label: "Over Capacity", value: capacityWaitlist, color: "#c2410c" },
               { label: "Waitlist", value: waitlist, color: "#f59e0b" },
               { label: "Rejected", value: rejected, color: "#dc2626" },
             ].map(stat => (
@@ -137,8 +140,8 @@ export default function CourseStudentsModal({ course, onClose }: Props) {
               onChange={e => setSearch(e.target.value)}
               style={{ flex: 1, minWidth: "200px", padding: "9px 14px", borderRadius: "8px", border: "1px solid #e5e7eb", fontSize: "14px", outline: "none" }}
             />
-            <div style={{ display: "flex", gap: "4px", backgroundColor: "#f3f4f6", padding: "4px", borderRadius: "8px" }}>
-              {(["all", "included", "waitlist", "rejected"] as const).map(f => (
+            <div style={{ display: "flex", gap: "4px", backgroundColor: "#f3f4f6", padding: "4px", borderRadius: "8px", flexWrap: "wrap" }}>
+              {(["all", "included", "capacity_waitlist", "waitlist", "rejected"] as const).map(f => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
@@ -147,7 +150,7 @@ export default function CourseStudentsModal({ course, onClose }: Props) {
                     cursor: "pointer", fontWeight: "600", fontSize: "13px",
                     backgroundColor: filter === f ? "white" : "transparent",
                     color: filter === f
-                      ? f === "included" ? "#16a34a" : f === "waitlist" ? "#f59e0b" : f === "rejected" ? "#dc2626" : "#111827"
+                      ? f === "included" ? "#16a34a" : f === "capacity_waitlist" ? "#c2410c" : f === "waitlist" ? "#f59e0b" : f === "rejected" ? "#dc2626" : "#111827"
                       : "#6b7280",
                     boxShadow: filter === f ? "0 1px 4px rgba(0,0,0,0.08)" : "none",
                     textTransform: "capitalize"
@@ -156,10 +159,12 @@ export default function CourseStudentsModal({ course, onClose }: Props) {
                   {f === "all"
                     ? `All (${students.length})`
                     : f === "included"
-                      ? `Passed (${passed})`
-                      : f === "waitlist"
-                        ? `Waitlist (${waitlist})`
-                        : `Rejected (${rejected})`}
+                      ? `Placed (${passed})`
+                      : f === "capacity_waitlist"
+                        ? `Over Capacity (${capacityWaitlist})`
+                        : f === "waitlist"
+                          ? `Waitlist (${waitlist})`
+                          : `Rejected (${rejected})`}
                 </button>
               ))}
             </div>

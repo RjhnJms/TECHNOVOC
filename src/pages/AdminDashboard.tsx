@@ -7,6 +7,8 @@ import SettingsTab from "./SettingsTab"
 import ReportsTab from "./ReportsTab"
 import StudentDetailModal from "./StudentDetailModal"
 import { BarChart3, BookOpen, Trophy, Settings, FileText } from "lucide-react"
+import { generateSchoolYears } from "../utils/schoolYear"
+
 
 interface Props {
   adminName: string
@@ -42,13 +44,18 @@ interface Student {
 export default function AdminDashboard({ adminName, onLogout }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("overview")
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
+  const [schoolYears, setSchoolYears] = useState<string[]>([])
+  const [schoolYearFilter, setSchoolYearFilter] = useState<string>("all")
 
   useEffect(() => {
     fetchAllData()
   }, [])
 
   const fetchAllData = async () => {
-    const { data: initialCourses } = await supabase.from("courses").select("*")
+    const [{ data: initialCourses }, { data: studentsData }] = await Promise.all([
+      supabase.from("courses").select("*"),
+      supabase.from("students").select("school_year"),
+    ])
 
     const existingCourseKeys = new Set((initialCourses || []).map(c => normalizeCourseName(c.course_name)))
     const missingCourses = NAVS_COURSES.filter(
@@ -58,6 +65,12 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
     if (missingCourses.length > 0) {
       await supabase.from("courses").insert(missingCourses)
     }
+
+    const dbYears = studentsData ? studentsData.map(s => s.school_year).filter(Boolean) : []
+    const generatedYears = generateSchoolYears(2023, 1)
+    const allYears = [...new Set([...dbYears, ...generatedYears])].sort((a, b) => b.localeCompare(a))
+    setSchoolYears(allYears)
+
   }
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
@@ -75,19 +88,39 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
           <h2 style={{ margin: 0, fontSize: "18px", fontWeight: "700" }}>TECHNO-VOC Admin Dashboard</h2>
           <p style={{ margin: 0, fontSize: "13px", color: "#6b7280" }}>Welcome, {adminName}</p>
         </div>
-        <button
-          onClick={onLogout}
-          style={{
-            padding: "8px 16px",
-            borderRadius: "8px",
-            border: "1px solid #e5e7eb",
-            cursor: "pointer",
-            backgroundColor: "white",
-            fontWeight: "600",
-          }}
-        >
-          ↪ Logout
-        </button>
+        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          <select
+            value={schoolYearFilter}
+            onChange={e => setSchoolYearFilter(e.target.value)}
+            style={{
+              padding: "8px 14px",
+              borderRadius: "8px",
+              border: "1px solid #e5e7eb",
+              fontSize: "14px",
+              backgroundColor: "white",
+              fontWeight: "600",
+              outline: "none",
+            }}
+          >
+            <option value="all">All School Years</option>
+            {schoolYears.map(sy => (
+              <option key={sy} value={sy}>{sy} & prior</option>
+            ))}
+          </select>
+          <button
+            onClick={onLogout}
+            style={{
+              padding: "8px 16px",
+              borderRadius: "8px",
+              border: "1px solid #e5e7eb",
+              cursor: "pointer",
+              backgroundColor: "white",
+              fontWeight: "600",
+            }}
+          >
+            ↪ Logout
+          </button>
+        </div>
       </div>
 
       <div className="admin-tabs">
@@ -112,10 +145,10 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
       </div>
 
       <div className="admin-content">
-        {activeTab === "overview" && <OverviewTab />}
+        {activeTab === "overview" && <OverviewTab schoolYearFilter={schoolYearFilter} />}
         {activeTab === "courses" && <CoursesTab />}
-        {activeTab === "results" && <ResultsTab />}
-        {activeTab === "reports" && <ReportsTab />}
+        {activeTab === "results" && <ResultsTab schoolYearFilter={schoolYearFilter} />}
+        {activeTab === "reports" && <ReportsTab schoolYearFilter={schoolYearFilter} />}
         {activeTab === "settings" && <SettingsTab />}
       </div>
 

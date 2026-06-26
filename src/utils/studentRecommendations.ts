@@ -109,6 +109,7 @@ export function getAdminAssignableCourseIds(
     .filter(r => !r.fromPreferredCourses)
     .map(r => r.course_id)
 }
+
 /** True when the student did not pass any of their 3 preferred courses (needs manual placement). */
 export function needsPlacementWaitlist(
   allScores: CourseScore[],
@@ -188,6 +189,18 @@ async function pickPassedPreferredWithSlot(
     if (!s || !isPassingScore(s.score, s.total_items)) continue
     const slotsLeft = await getCourseSlotsLeft(id)
     if (slotsLeft > 0) return { course_id: id, score: s.score }
+  }
+  return null
+}
+
+/** Pick the student's highest scoring course that has available capacity (fallback placement). */
+async function pickHighestScoringWithSlot(
+  allScores: CourseScore[]
+): Promise<{ course_id: string; score: number } | null> {
+  const sorted = [...allScores].sort((a, b) => b.score - a.score)
+  for (const s of sorted) {
+    const slotsLeft = await getCourseSlotsLeft(s.course_id)
+    if (slotsLeft > 0) return { course_id: s.course_id, score: s.score }
   }
   return null
 }
@@ -311,54 +324,67 @@ export async function saveStudentRecommendations(
         error: insertError.message,
       }
     }
-  } else if (autoPlacement && !onWaitlist) {
-    const best = await pickPassedPreferredWithSlot(allScores, preferredCourseIds)
-    if (best) {
-      const { error: insertError } = await supabase.from("rankings").insert({
-        student_id: studentId,
-        course_id: best.course_id,
-        score: best.score,
-        rank: 1,
-        status: "included",
-      })
-      if (insertError) {
-        return {
-          fromPreferredCourses: false,
-          recommendations: top3,
-          error: insertError.message,
+  } else {
+    // Try to place automatically based on preferred courses first
+    let placed = false
+
+    if (autoPlacement && !onWaitlist) {
+      const best = await pickPassedPreferredWithSlot(allScores, preferredCourseIds)
+      if (best) {
+        const { error: insertError } = await supabase.from("rankings").insert({
+          student_id: studentId,
+          course_id: best.course_id,
+          score: best.score,
+          rank: 1,
+          status: "included",
+        })
+        if (insertError) {
+          return {
+            fromPreferredCourses: false,
+            recommendations: top3,
+            error: insertError.message,
+          }
         }
-      }
-    } else {
-      const bestScore = allScores.reduce((max, s) => Math.max(max, s.score), 0)
-      const { error: insertError } = await supabase.from("rankings").insert({
-        student_id: studentId,
-        course_id: null,
-        score: bestScore,
-        rank: 0,
-        status: "waitlist",
-      })
-      if (insertError) {
-        return {
-          fromPreferredCourses: false,
-          recommendations: top3,
-          error: insertError.message,
-        }
+        placed = true
       }
     }
-  } else {
-    const bestScore = allScores.reduce((max, s) => Math.max(max, s.score), 0)
-    const { error: insertError } = await supabase.from("rankings").insert({
-      student_id: studentId,
-      course_id: null,
-      score: bestScore,
-      rank: 0,
-      status: "waitlist",
-    })
-    if (insertError) {
-      return {
-        fromPreferredCourses: false,
-        recommendations: top3,
-        error: insertError.message,
+
+    // Fallback: If they haven't been placed (failed preferred courses, or preferred are full),
+    // automatically assign them to their highest scoring overall course that has slots left.
+    if (!placed) {
+      const fallbackBest = await pickHighestScoringWithSlot(allScores)
+      if (fallbackBest) {
+        const { error: insertError } = await supabase.from("rankings").insert({
+          student_id: studentId,
+          course_id: fallbackBest.course_id,
+          score: fallbackBest.score,
+          rank: 1,
+          status: "included",
+        })
+        if (insertError) {
+          return {
+            fromPreferredCourses: false,
+            recommendations: top3,
+            error: insertError.message,
+          }
+        }
+      } else {
+        // Absolute fallback: if every single course is full, place on waitlist
+        const bestScore = allScores.reduce((max, s) => Math.max(max, s.score), 0)
+        const { error: insertError } = await supabase.from("rankings").insert({
+          student_id: studentId,
+          course_id: null,
+          score: bestScore,
+          rank: 0,
+          status: "waitlist",
+        })
+        if (insertError) {
+          return {
+            fromPreferredCourses: false,
+            recommendations: top3,
+            error: insertError.message,
+          }
+        }
       }
     }
   }

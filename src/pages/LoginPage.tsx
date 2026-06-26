@@ -2,6 +2,10 @@ import { useState } from "react"
 import { supabase } from "../supabaseClient"
 import logo from "../assets/NAVS LOGO.svg"
 import type { UserSession } from "../types/session"
+import { generateSchoolYears } from "../utils/schoolYear"
+
+const schoolYearOptions = generateSchoolYears(2023, 1).reverse()
+
 
 type StudentMode = "login" | "signup"
 
@@ -334,10 +338,11 @@ export default function LoginPage({ onLogin }: Props) {
                 }}
               >
                 <option value="">Select your school year</option>
-                <option value="2023-2024">2023-2024</option>
-                <option value="2024-2025">2024-2025</option>
-                <option value="2025-2026">2025-2026</option>
-                <option value="2026-2027">2026-2027</option>
+                {schoolYearOptions.map((sy) => (
+                  <option key={sy} value={sy}>
+                    {sy}
+                  </option>
+                ))}
               </select>
               {errors.schoolYear && (
                 <p style={{ color: "#dc2626", fontSize: "12px", marginTop: "4px", fontWeight: "500" }}>

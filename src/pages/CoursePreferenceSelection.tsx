@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { getChoiceLabel } from "../utils/studentRecommendations"
+import { CourseIcon } from "../utils/courseIcons"
 
 export interface CourseOption {
   id: string
@@ -64,7 +65,8 @@ export default function CoursePreferenceSelection({
               <p style={{ fontWeight: "700", color: "#1d4ed8", margin: "0 0 12px", fontSize: "14px" }}>Your ranked choices</p>
               {selected.map((id, i) => (
                 <div key={id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: i < selected.length - 1 ? "1px solid #dbeafe" : "none" }}>
-                  <span style={{ fontSize: "14px", color: "#1e40af" }}>
+                  <span style={{ fontSize: "14px", color: "#1e40af", display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <CourseIcon courseName={getCourseName(id)} size={13} circleSize={24} />
                     <strong style={{ textTransform: "capitalize" }}>{getChoiceLabel(i)}</strong> — {getCourseName(id)}
                   </span>
                   <div style={{ display: "flex", gap: "6px" }}>
@@ -106,11 +108,14 @@ export default function CoursePreferenceSelection({
                       opacity: disabled ? 0.5 : 1,
                     }}
                   >
-                    <span style={{ fontWeight: "600", fontSize: "14px", color: isSelected ? "#1d4ed8" : "#374151" }}>
-                      {course.course_name}
-                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <CourseIcon courseName={course.course_name} size={18} circleSize={36} />
+                      <span style={{ fontWeight: "600", fontSize: "14px", color: isSelected ? "#1d4ed8" : "#374151" }}>
+                        {course.course_name}
+                      </span>
+                    </div>
                     {isSelected && (
-                      <span style={{ display: "block", fontSize: "12px", color: "#2563eb", marginTop: "4px", fontWeight: "700", textTransform: "capitalize" }}>
+                      <span style={{ display: "block", fontSize: "12px", color: "#2563eb", marginTop: "4px", fontWeight: "700", textTransform: "capitalize", marginLeft: "46px" }}>
                         {getChoiceLabel(rank - 1)}
                       </span>
                     )}

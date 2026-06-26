@@ -1,6 +1,10 @@
 import { useState, useEffect, useMemo } from "react"
 import { supabase } from "../supabaseClient"
 import { Download, FileText, RefreshCw, Search, Users, X, ChevronDown } from "lucide-react"
+import { CourseIcon } from "../utils/courseIcons"
+import { SkeletonTableRows } from "../components/Skeleton"
+import { getStartYear } from "../utils/schoolYear"
+
 
 import ConfirmDialog from "../components/ConfirmDialog"
 
@@ -43,7 +47,11 @@ function downloadCsv(filename: string, rows: string[][]) {
   a.click()
 }
 
-export default function ReportsTab() {
+interface Props {
+  schoolYearFilter: string
+}
+
+export default function ReportsTab({ schoolYearFilter }: Props) {
   const [courses, setCourses] = useState<Course[]>([])
   const [included, setIncluded] = useState<IncludedRanking[]>([])
   const [selectedCourse, setSelectedCourse] = useState("")
@@ -75,17 +83,27 @@ export default function ReportsTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const filteredIncluded = useMemo(() => {
+    if (schoolYearFilter === "all") return included
+    const filterYearStart = getStartYear(schoolYearFilter)
+    return included.filter(r => {
+      const studentYear = r.students?.school_year
+      if (!studentYear) return false
+      return getStartYear(studentYear) <= filterYearStart
+    })
+  }, [included, schoolYearFilter])
+
   const courseSummaries = useMemo<CourseSummary[]>(
     () =>
       courses.map(course => {
-        const enrolled = included.filter(r => r.course_id === course.id).length
+        const enrolled = filteredIncluded.filter(r => r.course_id === course.id).length
         return {
           ...course,
           enrolled,
           available: Math.max(0, course.capacity - enrolled),
         }
       }),
-    [courses, included]
+    [courses, filteredIncluded]
   )
 
   const totalCapacity = courseSummaries.reduce((sum, course) => sum + course.capacity, 0)
@@ -95,10 +113,10 @@ export default function ReportsTab() {
   const selected = courseSummaries.find(c => c.id === selectedCourse)
   const courseRoster = useMemo(
     () =>
-      included
+      filteredIncluded
         .filter(r => r.course_id === selectedCourse)
         .sort((a, b) => a.rank - b.rank || b.score - a.score),
-    [included, selectedCourse]
+    [filteredIncluded, selectedCourse]
   )
 
   const filteredRoster = courseRoster.filter(r => {
@@ -148,7 +166,7 @@ export default function ReportsTab() {
   const exportSpecificTrack = (courseId: string) => {
     const course = courses.find(c => c.id === courseId)
     if (!course) return
-    const roster = included
+    const roster = filteredIncluded
       .filter(r => r.course_id === courseId)
       .sort((a, b) => a.rank - b.rank || b.score - a.score)
     const rows = buildRowsForRankings(roster, course.course_name)
@@ -156,7 +174,7 @@ export default function ReportsTab() {
   }
 
   const exportAllTracks = () => {
-    const sorted = [...included].sort((a, b) => {
+    const sorted = [...filteredIncluded].sort((a, b) => {
       const nameA = courses.find(c => c.id === a.course_id)?.course_name || ""
       const nameB = courses.find(c => c.id === b.course_id)?.course_name || ""
       if (nameA !== nameB) return nameA.localeCompare(nameB)
@@ -166,7 +184,7 @@ export default function ReportsTab() {
   }
 
   const exportTrackName = courses.find(c => c.id === exportTrackId)?.course_name
-  const exportTrackEnrolled = included.filter(r => r.course_id === exportTrackId).length
+  const exportTrackEnrolled = filteredIncluded.filter(r => r.course_id === exportTrackId).length
 
   const viewCourseStudents = (courseId: string) => {
     setSelectedCourse(courseId)
@@ -235,7 +253,7 @@ export default function ReportsTab() {
                   </div>
                   <div style={{ maxHeight: "260px", overflowY: "auto", padding: "4px 0" }}>
                     {courses.map(course => {
-                      const enrolled = included.filter(r => r.course_id === course.id).length
+                      const enrolled = filteredIncluded.filter(r => r.course_id === course.id).length
                       return (
                         <button
                           key={course.id}
@@ -265,7 +283,8 @@ export default function ReportsTab() {
                           onMouseEnter={e => { if (enrolled > 0) e.currentTarget.style.backgroundColor = "#f3f4f6" }}
                           onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent" }}
                         >
-                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            <CourseIcon courseName={course.course_name} size={14} circleSize={26} />
                             {course.course_name}
                           </span>
                           <span style={{
@@ -291,7 +310,7 @@ export default function ReportsTab() {
           <button
             type="button"
             onClick={() => setConfirmDialog("all")}
-            disabled={busy || included.length === 0}
+            disabled={busy || filteredIncluded.length === 0}
             style={btnDark}
           >
             <Download size={16} />
@@ -326,7 +345,20 @@ export default function ReportsTab() {
         </div>
 
         {loading ? (
-          <p style={{ textAlign: "center", color: "#9ca3af", padding: "28px 0" }}>Loading course slots...</p>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px", minWidth: "680px" }}>
+              <thead>
+                <tr style={{ borderBottom: "2px solid #e5e7eb", backgroundColor: "#f9fafb" }}>
+                  {["Course", "Capacity", "Enrolled", "Available slots", "Status", "Students"].map(h => (
+                    <th key={h} style={thStyle}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <SkeletonTableRows columns={6} rows={6} />
+              </tbody>
+            </table>
+          </div>
         ) : courseSummaries.length === 0 ? (
           <p style={{ textAlign: "center", color: "#9ca3af", padding: "28px 0" }}>No courses found.</p>
         ) : (
@@ -351,7 +383,12 @@ export default function ReportsTab() {
                         backgroundColor: isSelected ? "#eef2ff" : i % 2 === 0 ? "white" : "#f9fafb",
                       }}
                     >
-                      <td style={{ ...tdStyle, fontWeight: "700" }}>{course.course_name}</td>
+                      <td style={{ ...tdStyle, fontWeight: "700" }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+                          <CourseIcon courseName={course.course_name} size={15} circleSize={30} />
+                          {course.course_name}
+                        </span>
+                      </td>
                       <td style={tdStyle}>{course.capacity}</td>
                       <td style={{ ...tdStyle, color: "#16a34a", fontWeight: "700" }}>{course.enrolled}</td>
                       <td style={{ ...tdStyle, color: isFull ? "#dc2626" : "#f59e0b", fontWeight: "700" }}>
@@ -429,7 +466,18 @@ export default function ReportsTab() {
           </div>
 
           {loading ? (
-            <p style={{ textAlign: "center", color: "#9ca3af", padding: "40px 0" }}>Loading reports...</p>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
+              <thead>
+                <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
+                  {["Student", "LRN", "School year", "Enrolled Course"].map(h => (
+                    <th key={h} style={thStyle}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <SkeletonTableRows columns={4} rows={5} />
+              </tbody>
+            </table>
           ) : filteredRoster.length === 0 ? (
             <p style={{ textAlign: "center", color: "#9ca3af", padding: "40px 0" }}>
               {courseRoster.length === 0

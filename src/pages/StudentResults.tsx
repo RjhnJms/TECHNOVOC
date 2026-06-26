@@ -6,6 +6,8 @@ import {
   QUESTIONS_PER_TRACK,
 } from "../utils/trackRanking"
 import { computeTop3Recommendations, getChoiceLabel } from "../utils/studentRecommendations"
+import { CourseIcon } from "../utils/courseIcons"
+import { SkeletonResultsPage } from "../components/Skeleton"
 
 interface Props {
   studentId: string
@@ -176,12 +178,7 @@ function ResultsHeader({ studentName, onLogout }: {
 }
 
 function LoadingState() {
-  return (
-    <div style={{ textAlign: "center", padding: "80px 0" }}>
-      <p style={{ fontSize: "40px", margin: "0 0 8px" }}>⏳</p>
-      <p style={{ color: "#6b7280" }}>Loading your results...</p>
-    </div>
-  )
+  return <SkeletonResultsPage />
 }
 
 function NoAssessmentState({ onStart }: { onStart: () => void }) {
@@ -263,7 +260,8 @@ function Top3Courses({
       {recommendationSource === "assigned" && assignedCourse && (
         <div style={{ backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
           <p style={{ fontWeight: "700", color: "#15803d", margin: "0 0 4px", fontSize: "14px" }}>🎉 Course Placement Assigned</p>
-          <p style={{ color: "#374151", fontSize: "18px", fontWeight: "800", margin: "0 0 6px" }}>
+          <p style={{ color: "#374151", fontSize: "18px", fontWeight: "800", margin: "0 0 6px", display: "flex", alignItems: "center", gap: 10 }}>
+            <CourseIcon courseName={assignedCourse.courses?.course_name || ""} size={20} circleSize={40} />
             {assignedCourse.courses?.course_name}
           </p>
           <p style={{ color: "#16a34a", fontSize: "13px", margin: 0, fontWeight: "600" }}>
@@ -299,10 +297,11 @@ function Top3Courses({
                     alignItems: "center"
                   }}>
                     <div>
-                      <p style={{ margin: 0, fontSize: "14px", fontWeight: "700", color: "#111827", textTransform: "capitalize" }}>
+                      <p style={{ margin: 0, fontSize: "14px", fontWeight: "700", color: "#111827", textTransform: "capitalize", display: "flex", alignItems: "center", gap: 8 }}>
+                        <CourseIcon courseName={name} size={14} circleSize={28} />
                         {getChoiceLabel(index)}: {name}
                       </p>
-                      <p style={{ margin: "2px 0 0", fontSize: "11.5px", color: "#6b7280" }}>Preferred course</p>
+                      <p style={{ margin: "2px 0 0 36px", fontSize: "11.5px", color: "#6b7280" }}>Preferred course</p>
                     </div>
                     <div style={{ textAlign: "right" }}>
                       <p style={{ margin: 0, fontWeight: "800", fontSize: "16px", color: "#2563eb" }}>
@@ -364,7 +363,10 @@ function Top3Courses({
                       #{i + 1}
                     </span>
                     <div style={{ flex: 1 }}>
-                      <p style={{ fontWeight: "700", margin: "0 0 4px", fontSize: "16px" }}>{r.courses?.course_name}</p>
+                      <p style={{ fontWeight: "700", margin: "0 0 4px", fontSize: "16px", display: "flex", alignItems: "center", gap: 8 }}>
+                        <CourseIcon courseName={r.courses?.course_name || ""} size={16} circleSize={32} />
+                        {r.courses?.course_name}
+                      </p>
                       <p style={{ fontSize: "14px", color: "#2563eb", fontWeight: "700", margin: "0 0 6px" }}>
                         Score: {r.score} / {total || QUESTIONS_PER_TRACK}
                       </p>

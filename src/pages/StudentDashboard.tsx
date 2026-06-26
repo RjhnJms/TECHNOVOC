@@ -15,6 +15,8 @@ import {
   setLabCodeVerifiedLocally,
   validateLabCodeForStudent,
 } from "../utils/examAccessCode"
+import ConfirmDialog from "../components/ConfirmDialog"
+
 
 interface Props {
   studentId: string
@@ -104,6 +106,21 @@ export default function StudentDashboard({ studentId, studentName, onLogout }: P
   const [verifyingLabCode, setVerifyingLabCode] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [showCompleteModal, setShowCompleteModal] = useState(false)
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  const [showExitConfirm, setShowExitConfirm] = useState(false)
+  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
+
+  const handleLogoutClick = () => setShowLogoutConfirm(true)
+  const handleExitClick = () => setShowExitConfirm(true)
+  const handleSubmitClick = () => {
+    const totalAnswered = questions.filter(q => !!answers[q.id]).length
+    if (totalAnswered < questions.length) {
+      alert(`You must answer all ${questions.length} questions before submitting. (${questions.length - totalAnswered} unanswered questions remaining)`)
+      return
+    }
+    setShowSubmitConfirm(true)
+  }
+
   const submittingRef = useRef(false)
   const autoSubmittedRef = useRef(false)
   const skipSessionSaveRef = useRef(false)
@@ -365,8 +382,6 @@ export default function StudentDashboard({ studentId, studentName, onLogout }: P
       return
     }
 
-    if (!autoSubmit && !confirm("Are you sure you want to submit your assessment?")) return
-
     submittingRef.current = true
     setSubmitting(true)
     skipSessionSaveRef.current = true
@@ -452,94 +467,124 @@ export default function StudentDashboard({ studentId, studentName, onLogout }: P
     .map(id => availableCourses.find(c => c.id === id)?.course_name)
     .filter(Boolean) as string[]
 
-  // ── PREFERENCES ──
-  if (stage === "preferences" && !alreadyTaken) {
-    return (
-      <CoursePreferenceSelection
-        studentName={studentName}
-        courses={availableCourses}
-        loading={loading}
-        onConfirm={savePreferredCourses}
-        onLogout={onLogout}
-      />
-    )
-  }
-
-  // ── INTRO ──
-  if (stage === "intro") {
-    return (
-      <AssessmentIntro
-        studentName={studentName}
-        alreadyTaken={alreadyTaken}
-        loading={loading}
-        onStart={() => { void startAssessment() }}
-        onViewResults={() => setStage("results")}
-        onLogout={onLogout}
-        onChangePreferences={() => setStage("preferences")}
-        totalQuestions={preCalculatedTotal}
-        preferredCourses={preferredCourseNames}
-        requireLabCode={requireLabCode}
-        labCode={labCode}
-        onLabCodeChange={code => {
-          setLabCode(code)
-          setLabCodeError(null)
-          if (labCodeVerified) setLabCodeVerified(false)
-        }}
-        onVerifyLabCode={() => { void handleVerifyLabCode() }}
-        labCodeVerified={labCodeVerified}
-        labCodeError={labCodeError}
-        verifyingLabCode={verifyingLabCode}
-      />
-    )
-  }
-
-  // ── ASSESSMENT ──
-  if (stage === "assessment") {
-    return (
-      <>
-        <AssessmentQuestion
+  return (
+    <>
+      {stage === "preferences" && !alreadyTaken && (
+        <CoursePreferenceSelection
           studentName={studentName}
-          questions={questions}
-          currentIndex={currentIndex}
-          answers={answers}
-          skippedQuestions={skippedQuestions}
-          skipsUsed={skipsUsed}
-          maxSkips={MAX_SKIPS}
-          assessmentEndTime={assessmentEndTime}
-          submitting={submitting}
-          onAnswer={handleAnswer}
-          onSkip={handleSkip}
-          onNext={() => setCurrentIndex(i => i + 1)}
-          onPrev={() => setCurrentIndex(i => Math.max(0, i - 1))}
-          onNavigate={setCurrentIndex}
-          onSubmit={() => { void handleSubmit(false) }}
-          onExit={resetAssessment}
+          courses={availableCourses}
+          loading={loading}
+          onConfirm={savePreferredCourses}
+          onLogout={handleLogoutClick}
         />
-        <AssessmentCompleteModal
-          open={showCompleteModal}
+      )}
+
+      {stage === "intro" && (
+        <AssessmentIntro
           studentName={studentName}
-          onContinue={() => {
-            setShowCompleteModal(false)
-            setStage("results")
+          alreadyTaken={alreadyTaken}
+          loading={loading}
+          onStart={() => { void startAssessment() }}
+          onViewResults={() => setStage("results")}
+          onLogout={handleLogoutClick}
+          onChangePreferences={() => setStage("preferences")}
+          totalQuestions={preCalculatedTotal}
+          preferredCourses={preferredCourseNames}
+          requireLabCode={requireLabCode}
+          labCode={labCode}
+          onLabCodeChange={code => {
+            setLabCode(code)
+            setLabCodeError(null)
+            if (labCodeVerified) setLabCodeVerified(false)
           }}
+          onVerifyLabCode={() => { void handleVerifyLabCode() }}
+          labCodeVerified={labCodeVerified}
+          labCodeError={labCodeError}
+          verifyingLabCode={verifyingLabCode}
         />
-      </>
-    )
-  }
+      )}
 
-  // ── RESULTS ──
-  if (stage === "results") {
-    return (
-      <StudentResults
-        studentId={studentId}
-        studentName={studentName}
-        onLogout={onLogout}
-        onRetake={resetAssessment}
+      {stage === "assessment" && (
+        <>
+          <AssessmentQuestion
+            studentName={studentName}
+            questions={questions}
+            currentIndex={currentIndex}
+            answers={answers}
+            skippedQuestions={skippedQuestions}
+            skipsUsed={skipsUsed}
+            maxSkips={MAX_SKIPS}
+            assessmentEndTime={assessmentEndTime}
+            submitting={submitting}
+            onAnswer={handleAnswer}
+            onSkip={handleSkip}
+            onNext={() => setCurrentIndex(i => i + 1)}
+            onPrev={() => setCurrentIndex(i => Math.max(0, i - 1))}
+            onNavigate={setCurrentIndex}
+            onSubmit={handleSubmitClick}
+            onExit={handleExitClick}
+          />
+          <AssessmentCompleteModal
+            open={showCompleteModal}
+            studentName={studentName}
+            onContinue={() => {
+              setShowCompleteModal(false)
+              setStage("results")
+            }}
+          />
+        </>
+      )}
+
+      {stage === "results" && (
+        <StudentResults
+          studentId={studentId}
+          studentName={studentName}
+          onLogout={handleLogoutClick}
+          onRetake={resetAssessment}
+        />
+      )}
+
+      {/* Confirm Dialogs */}
+      <ConfirmDialog
+        open={showLogoutConfirm}
+        title="Logout"
+        message="Are you sure you want to log out?"
+        confirmLabel="Logout"
+        variant="warning"
+        onConfirm={() => {
+          setShowLogoutConfirm(false)
+          onLogout()
+        }}
+        onCancel={() => setShowLogoutConfirm(false)}
       />
-    )
-  }
 
-  return null
+      <ConfirmDialog
+        open={showExitConfirm}
+        title="Exit Assessment"
+        message="Are you sure you want to exit the assessment and return to the instructions page? Your current session answers will be cleared."
+        confirmLabel="Exit"
+        variant="danger"
+        onConfirm={() => {
+          setShowExitConfirm(false)
+          resetAssessment()
+        }}
+        onCancel={() => setShowExitConfirm(false)}
+      />
+
+      <ConfirmDialog
+        open={showSubmitConfirm}
+        title="Submit Assessment"
+        message="Are you sure you want to submit your assessment? Once submitted, you cannot change your answers."
+        confirmLabel={submitting ? "Submitting..." : "Submit"}
+        variant="assign"
+        onConfirm={async () => {
+          setShowSubmitConfirm(false)
+          await handleSubmit(false)
+        }}
+        onCancel={() => setShowSubmitConfirm(false)}
+      />
+    </>
+  )
 }
 
 // ── Helper functions (outside component = lower complexity) ──

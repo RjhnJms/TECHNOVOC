@@ -89,7 +89,7 @@ export default function ReportsTab({ schoolYearFilter }: Props) {
     return included.filter(r => {
       const studentYear = r.students?.school_year
       if (!studentYear) return false
-      return getStartYear(studentYear) <= filterYearStart
+      return getStartYear(studentYear) === filterYearStart
     })
   }, [included, schoolYearFilter])
 

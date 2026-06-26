@@ -231,7 +231,7 @@ export default function ResultsTab({ schoolYearFilter }: Props) {
         const studentYearStart = s.school_year ? getStartYear(s.school_year) : 0
         const matchesSchoolYear =
           schoolYearFilter === "all" ||
-          studentYearStart <= filterYearStart
+          studentYearStart === filterYearStart
 
         return matchesSearch && matchesCourse && matchesSchoolYear
       })

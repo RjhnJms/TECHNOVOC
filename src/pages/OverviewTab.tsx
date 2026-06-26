@@ -75,7 +75,7 @@ export default function OverviewTab({ schoolYearFilter }: Props) {
     const filteredStudents = (studentsData || []).filter(s => {
       if (schoolYearFilter === "all") return true
       const studentYearStart = s.school_year ? getStartYear(s.school_year) : 0
-      return studentYearStart <= filterYearStart
+      return studentYearStart === filterYearStart
     })
 
     const filteredStudentIds = new Set(filteredStudents.map(s => s.id))

@@ -4,6 +4,7 @@ import StudentResults from "./StudentResults"
 import AssessmentIntro from "./Assessmentintro"
 import AssessmentQuestion from "./AssessmentQuestion"
 import CoursePreferenceSelection, { type CourseOption } from "./CoursePreferenceSelection"
+import AssessmentCompleteModal from "../components/AssessmentCompleteModal"
 import { selectExamQuestions, countExamQuestions, shuffleRandom } from "../utils/examQuestions"
 import { isPassingScore } from "../utils/trackRanking"
 import { saveStudentRecommendations } from "../utils/studentRecommendations"
@@ -102,6 +103,7 @@ export default function StudentDashboard({ studentId, studentName, onLogout }: P
   const [labCodeError, setLabCodeError] = useState<string | null>(null)
   const [verifyingLabCode, setVerifyingLabCode] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [showCompleteModal, setShowCompleteModal] = useState(false)
   const submittingRef = useRef(false)
   const autoSubmittedRef = useRef(false)
   const skipSessionSaveRef = useRef(false)
@@ -356,6 +358,13 @@ export default function StudentDashboard({ studentId, studentName, onLogout }: P
 
   const handleSubmit = useCallback(async (autoSubmit = false) => {
     if (submittingRef.current) return
+
+    const totalAnswered = questions.filter(q => !!answers[q.id]).length
+    if (!autoSubmit && totalAnswered < questions.length) {
+      alert(`You must answer all ${questions.length} questions before submitting. (${questions.length - totalAnswered} unanswered questions remaining)`)
+      return
+    }
+
     if (!autoSubmit && !confirm("Are you sure you want to submit your assessment?")) return
 
     submittingRef.current = true
@@ -394,7 +403,7 @@ export default function StudentDashboard({ studentId, studentName, onLogout }: P
       }
 
       setAlreadyTaken(true)
-      setStage("results")
+      setShowCompleteModal(true)
     } catch (err) {
       console.error("Assessment submit failed:", err)
       const message = err instanceof Error ? err.message : "Unknown error"
@@ -487,24 +496,34 @@ export default function StudentDashboard({ studentId, studentName, onLogout }: P
   // ── ASSESSMENT ──
   if (stage === "assessment") {
     return (
-      <AssessmentQuestion
-        studentName={studentName}
-        questions={questions}
-        currentIndex={currentIndex}
-        answers={answers}
-        skippedQuestions={skippedQuestions}
-        skipsUsed={skipsUsed}
-        maxSkips={MAX_SKIPS}
-        assessmentEndTime={assessmentEndTime}
-        submitting={submitting}
-        onAnswer={handleAnswer}
-        onSkip={handleSkip}
-        onNext={() => setCurrentIndex(i => i + 1)}
-        onPrev={() => setCurrentIndex(i => Math.max(0, i - 1))}
-        onNavigate={setCurrentIndex}
-        onSubmit={() => { void handleSubmit(false) }}
-        onExit={resetAssessment}
-      />
+      <>
+        <AssessmentQuestion
+          studentName={studentName}
+          questions={questions}
+          currentIndex={currentIndex}
+          answers={answers}
+          skippedQuestions={skippedQuestions}
+          skipsUsed={skipsUsed}
+          maxSkips={MAX_SKIPS}
+          assessmentEndTime={assessmentEndTime}
+          submitting={submitting}
+          onAnswer={handleAnswer}
+          onSkip={handleSkip}
+          onNext={() => setCurrentIndex(i => i + 1)}
+          onPrev={() => setCurrentIndex(i => Math.max(0, i - 1))}
+          onNavigate={setCurrentIndex}
+          onSubmit={() => { void handleSubmit(false) }}
+          onExit={resetAssessment}
+        />
+        <AssessmentCompleteModal
+          open={showCompleteModal}
+          studentName={studentName}
+          onContinue={() => {
+            setShowCompleteModal(false)
+            setStage("results")
+          }}
+        />
+      </>
     )
   }
 

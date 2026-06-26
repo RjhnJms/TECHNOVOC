@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { supabase } from "../supabaseClient"
 import { Search, Trash2, Eye } from "lucide-react"
 import StudentDetailModal from "./StudentDetailModal"
@@ -12,18 +12,33 @@ interface Student {
   created_at: string
 }
 
+interface Course {
+  id: string
+  course_name: string
+}
+
+interface PlacementInfo {
+  label: string
+  courseId: string | null
+  status: "assigned" | "waitlist" | "pending" | "not_taken"
+  style: React.CSSProperties
+}
+
 export default function ResultsTab() {
   const [students, setStudents] = useState<Student[]>([])
+  const [courses, setCourses] = useState<Course[]>([])
   const [loading, setLoading] = useState(true)
   const [studentSearch, setStudentSearch] = useState("")
+  const [courseFilter, setCourseFilter] = useState("all")
+  const [sortBy, setSortBy] = useState("newest")
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [confirmDialog, setConfirmDialog] = useState<{ type: "delete" | "export"; student?: Student } | null>(null)
-  const [placementStatuses, setPlacementStatuses] = useState<Record<string, { label: string; style: React.CSSProperties }>>({})
+  const [placementStatuses, setPlacementStatuses] = useState<Record<string, PlacementInfo>>({})
 
   const fetchData = useCallback(async () => {
     setLoading(true)
-    const [{ data: studentData }, { data: rankData }, { data: assessmentData }] = await Promise.all([
+    const [{ data: studentData }, { data: rankData }, { data: assessmentData }, { data: courseData }] = await Promise.all([
       supabase
         .from("students")
         .select("id, full_name, lrn, school_year, created_at")
@@ -33,17 +48,23 @@ export default function ResultsTab() {
         .select("student_id, course_id, status, courses(course_name)"),
       supabase
         .from("assessments")
-        .select("student_id")
+        .select("student_id"),
+      supabase
+        .from("courses")
+        .select("id, course_name")
+        .order("course_name"),
     ])
 
     const takenStudentIds = new Set((assessmentData || []).map(a => a.student_id))
-    const statusMap: Record<string, { label: string; style: React.CSSProperties }> = {}
+    const statusMap: Record<string, PlacementInfo> = {}
 
     for (const student of studentData || []) {
       const sId = student.id
       if (!takenStudentIds.has(sId)) {
         statusMap[sId] = {
           label: "Not Taken",
+          courseId: null,
+          status: "not_taken",
           style: { backgroundColor: "#f3f4f6", color: "#6b7280" }
         }
         continue
@@ -57,22 +78,29 @@ export default function ResultsTab() {
         const cName = (assigned.courses as { course_name?: string })?.course_name || "Assigned"
         statusMap[sId] = {
           label: cName,
+          courseId: assigned.course_id,
+          status: "assigned",
           style: { backgroundColor: "#dcfce7", color: "#16a34a", fontWeight: "700" }
         }
       } else if (waitlist) {
         statusMap[sId] = {
           label: "Waitlist",
+          courseId: null,
+          status: "waitlist",
           style: { backgroundColor: "#f3e8ff", color: "#7c3aed", fontWeight: "700" }
         }
       } else {
         statusMap[sId] = {
           label: "Pending",
+          courseId: null,
+          status: "pending",
           style: { backgroundColor: "#fef3c7", color: "#d97706", fontWeight: "700" }
         }
       }
     }
 
     setStudents(studentData || [])
+    setCourses(courseData || [])
     setPlacementStatuses(statusMap)
     setLoading(false)
   }, [])
@@ -95,23 +123,59 @@ export default function ResultsTab() {
   }
 
   const exportStudentsCSV = () => {
+    const exportRows = filteredStudents
     const csv = [
-      "Full Name,LRN,School Year,Registered",
-      ...students.map(
-        s => `${s.full_name},${s.lrn},${s.school_year},${new Date(s.created_at).toLocaleDateString()}`
+      "Full Name,LRN,School Year,Registered,Enrolled Course",
+      ...exportRows.map(
+        s => `${s.full_name},${s.lrn},${s.school_year},${new Date(s.created_at).toLocaleDateString()},${placementStatuses[s.id]?.label || ""}`
       ),
     ].join("\n")
+    const selectedCourse = courses.find(course => course.id === courseFilter)
+    const filename = selectedCourse
+      ? `${selectedCourse.course_name.replace(/\s+/g, "-")}-students.csv`
+      : courseFilter === "unassigned"
+        ? "unassigned-pending-students.csv"
+        : "students-current-list.csv"
     const a = document.createElement("a")
     a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }))
-    a.download = "students.csv"
+    a.download = filename
     a.click()
   }
 
-  const filteredStudents = students.filter(
-    s =>
-      s.full_name?.toLowerCase().includes(studentSearch.toLowerCase()) ||
-      s.lrn?.includes(studentSearch)
-  )
+  const filteredStudents = useMemo(() => {
+    const q = studentSearch.toLowerCase()
+    return students
+      .filter(s => {
+        const placement = placementStatuses[s.id]
+        const matchesSearch =
+          s.full_name?.toLowerCase().includes(q) ||
+          s.lrn?.includes(studentSearch)
+
+        const matchesCourse =
+          courseFilter === "all" ||
+          (courseFilter === "unassigned" && placement?.status !== "assigned") ||
+          placement?.courseId === courseFilter
+
+        return matchesSearch && matchesCourse
+      })
+      .sort((a, b) => {
+        const placementA = placementStatuses[a.id]?.label || ""
+        const placementB = placementStatuses[b.id]?.label || ""
+        switch (sortBy) {
+          case "name_asc":
+            return a.full_name.localeCompare(b.full_name)
+          case "name_desc":
+            return b.full_name.localeCompare(a.full_name)
+          case "course_asc":
+            return placementA.localeCompare(placementB) || a.full_name.localeCompare(b.full_name)
+          case "oldest":
+            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          case "newest":
+          default:
+            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        }
+      })
+  }, [courseFilter, placementStatuses, sortBy, studentSearch, students])
 
   return (
     <div>
@@ -154,36 +218,58 @@ export default function ResultsTab() {
               fontSize: "13px",
             }}
           >
-            Export students CSV
+            Export current list CSV
           </button>
         </div>
 
-        <div style={{ position: "relative", marginBottom: "16px" }}>
-          <Search
-            size={16}
-            style={{
-              position: "absolute",
-              left: "12px",
-              top: "50%",
-              transform: "translateY(-50%)",
-              color: "#9ca3af",
-            }}
-          />
-          <input
-            placeholder="Search students by name or LRN..."
-            value={studentSearch}
-            onChange={e => setStudentSearch(e.target.value)}
-            style={{
-              width: "100%",
-              padding: "10px 14px 10px 36px",
-              borderRadius: "8px",
-              border: "1px solid #e5e7eb",
-              fontSize: "14px",
-              outline: "none",
-              boxSizing: "border-box",
-            }}
-          />
+        <div style={{ display: "flex", gap: "10px", marginBottom: "16px", flexWrap: "wrap" }}>
+          <div style={{ position: "relative", flex: "1 1 260px" }}>
+            <Search
+              size={16}
+              style={{
+                position: "absolute",
+                left: "12px",
+                top: "50%",
+                transform: "translateY(-50%)",
+                color: "#9ca3af",
+              }}
+            />
+            <input
+              placeholder="Search students by name or LRN..."
+              value={studentSearch}
+              onChange={e => setStudentSearch(e.target.value)}
+              style={{ ...inputStyle, paddingLeft: "36px" }}
+            />
+          </div>
+
+          <select
+            value={courseFilter}
+            onChange={e => setCourseFilter(e.target.value)}
+            style={{ ...inputStyle, flex: "0 1 220px" }}
+          >
+            <option value="all">All tracks</option>
+            {courses.map(course => (
+              <option key={course.id} value={course.id}>{course.course_name}</option>
+            ))}
+            <option value="unassigned">Unassigned / Pending</option>
+          </select>
+
+          <select
+            value={sortBy}
+            onChange={e => setSortBy(e.target.value)}
+            style={{ ...inputStyle, flex: "0 1 180px" }}
+          >
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="name_asc">Name A-Z</option>
+            <option value="name_desc">Name Z-A</option>
+            <option value="course_asc">Track A-Z</option>
+          </select>
         </div>
+
+        <p style={{ color: "#6b7280", fontSize: "13px", margin: "0 0 12px" }}>
+          Showing {filteredStudents.length} of {students.length} student{students.length === 1 ? "" : "s"}
+        </p>
 
         {loading ? (
           <p style={{ textAlign: "center", color: "#9ca3af", padding: "24px 0" }}>Loading students...</p>
@@ -193,7 +279,7 @@ export default function ResultsTab() {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
             <thead>
               <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
-                {["Full Name", "LRN", "School Year", "Registered", "Placement Status", "Actions"].map(h => (
+                {["Full Name", "LRN", "School Year", "Registered", "Enrolled Course", "Actions"].map(h => (
                   <th
                     key={h}
                     style={{ textAlign: "left", padding: "10px 12px", color: "#6b7280", fontWeight: "600" }}
@@ -283,12 +369,12 @@ export default function ResultsTab() {
             Passing score per track: <strong>6 out of 10</strong>.
           </li>
           <li>
-            If they pass on <strong>all 3 preferred courses</strong>, those become their top 3 —{" "}
-            <strong>highest score = #1 recommendation</strong>.
+            If they pass on <strong>all 3 preferred courses</strong> (6+/10), those become their top 3 —{" "}
+            <strong>highest score = #1</strong>, with ties broken by <strong>1st, 2nd, then 3rd choice</strong>.
           </li>
           <li>
             If they do <strong>not</strong> pass all 3 preferred courses, their top 3 are the{" "}
-            <strong>highest-scoring courses</strong> from the full exam.
+            <strong>highest-scoring courses outside their 3 choices</strong>.
           </li>
           <li>
             Use <strong>View</strong> on a student to see preferred course scores or top 3 recommendations.
@@ -318,7 +404,7 @@ export default function ResultsTab() {
       <ConfirmDialog
         open={confirmDialog?.type === "export"}
         title="Export Students CSV"
-        message={`Export ${students.length} student record${students.length === 1 ? "" : "s"} to a CSV file?`}
+        message={`Export ${filteredStudents.length} student record${filteredStudents.length === 1 ? "" : "s"} from the current filtered list to a CSV file?`}
         confirmLabel="Export"
         variant="export"
         onConfirm={() => { setConfirmDialog(null); exportStudentsCSV() }}
@@ -339,4 +425,15 @@ const actionBtn: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   gap: 6,
+}
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "10px 14px",
+  borderRadius: "8px",
+  border: "1px solid #e5e7eb",
+  fontSize: "14px",
+  outline: "none",
+  boxSizing: "border-box",
+  backgroundColor: "white",
 }

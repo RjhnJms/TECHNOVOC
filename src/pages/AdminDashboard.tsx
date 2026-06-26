@@ -61,7 +61,7 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
   }
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
-    { key: "overview", label: "Overview", icon: <BarChart3 size={16} /> },
+    { key: "overview", label: "Dashboard", icon: <BarChart3 size={16} /> },
     { key: "courses", label: "Course Management", icon: <BookOpen size={16} /> },
     { key: "results", label: "Results", icon: <Trophy size={16} /> },
     { key: "reports", label: "Reports", icon: <FileText size={16} /> },

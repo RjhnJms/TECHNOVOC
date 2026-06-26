@@ -76,6 +76,7 @@ export default function AssessmentQuestion({
   const skipsRemaining = maxSkips - skipsUsed
   const isLowTime = timeRemaining > 0 && timeRemaining <= 5 * 60 * 1000
   const isLastPage = currentPage === totalPages - 1
+  const canSubmit = totalAnswered === questions.length
 
   useEffect(() => {
     if (!assessmentEndTime) return
@@ -354,18 +355,25 @@ export default function AssessmentQuestion({
             </button>
 
             {isLastPage ? (
-              <button
-                onClick={onSubmit}
-                disabled={submitting}
-                style={{
-                  ...btnPrimary,
-                  backgroundColor: "#1e8e3e",
-                  opacity: submitting ? 0.6 : 1,
-                  cursor: submitting ? "not-allowed" : "pointer"
-                }}
-              >
-                {submitting ? "Submitting..." : "✓ Submit Assessment"}
-              </button>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+                <button
+                  onClick={onSubmit}
+                  disabled={submitting || !canSubmit}
+                  style={{
+                    ...btnPrimary,
+                    backgroundColor: (submitting || !canSubmit) ? "#bdc1c6" : "#1e8e3e",
+                    cursor: (submitting || !canSubmit) ? "not-allowed" : "pointer",
+                    boxShadow: (submitting || !canSubmit) ? "none" : btnPrimary.boxShadow
+                  }}
+                >
+                  {submitting ? "Submitting..." : "✓ Submit Assessment"}
+                </button>
+                {!canSubmit && (
+                  <p style={{ margin: "6px 0 0", fontSize: "12px", color: "#d93025", fontWeight: "600" }}>
+                    Please answer all {questions.length} questions to submit ({questions.length - totalAnswered} remaining)
+                  </p>
+                )}
+              </div>
             ) : (
               <button
                 onClick={goToNextSection}
@@ -533,19 +541,24 @@ export default function AssessmentQuestion({
             <div style={{ padding: "12px 18px 16px", borderTop: "1px solid #e0e0e0" }}>
               <button
                 onClick={onSubmit}
-                disabled={submitting}
+                disabled={submitting || !canSubmit}
                 style={{
                   ...btnPrimary,
                   width: "100%",
-                  backgroundColor: "#1e8e3e",
+                  backgroundColor: (submitting || !canSubmit) ? "#bdc1c6" : "#1e8e3e",
                   fontSize: "13px",
                   padding: "10px 14px",
-                  opacity: submitting ? 0.6 : 1,
-                  cursor: submitting ? "not-allowed" : "pointer"
+                  cursor: (submitting || !canSubmit) ? "not-allowed" : "pointer",
+                  boxShadow: (submitting || !canSubmit) ? "none" : btnPrimary.boxShadow
                 }}
               >
                 {submitting ? "Submitting..." : "Submit Assessment"}
               </button>
+              {!canSubmit && (
+                <p style={{ margin: "6px 0 0", fontSize: "11px", color: "#d93025", fontWeight: "600", textAlign: "center", lineHeight: "1.4" }}>
+                  Please answer all questions to submit ({questions.length - totalAnswered} remaining)
+                </p>
+              )}
             </div>
           </div>
         </div>

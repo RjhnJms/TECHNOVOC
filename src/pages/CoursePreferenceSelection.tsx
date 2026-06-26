@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { getChoiceLabel } from "../utils/studentRecommendations"
 
 export interface CourseOption {
   id: string
@@ -54,16 +55,17 @@ export default function CoursePreferenceSelection({
         <div className="intro-card">
           <h2 style={{ fontWeight: "700", fontSize: "20px", margin: "0 0 8px" }}>Select Your 3 Preferred Courses</h2>
           <p style={{ color: "#6b7280", margin: "0 0 24px", fontSize: "14px", lineHeight: 1.5 }}>
-            Choose exactly three courses you are most interested in, in order of preference (1st choice first). You will take the full assessment after this step.
+            Choose exactly three courses in order: <strong>1st choice</strong>, then <strong>2nd choice</strong>, then <strong>3rd choice</strong>.
+            If your scores tie, the system uses this order to decide your best match. You will take the full assessment after this step.
           </p>
 
           {selected.length > 0 && (
             <div style={{ backgroundColor: "#eff6ff", borderRadius: "12px", padding: "16px", marginBottom: "20px", border: "1px solid #bfdbfe" }}>
-              <p style={{ fontWeight: "700", color: "#1d4ed8", margin: "0 0 12px", fontSize: "14px" }}>Your preferences</p>
+              <p style={{ fontWeight: "700", color: "#1d4ed8", margin: "0 0 12px", fontSize: "14px" }}>Your ranked choices</p>
               {selected.map((id, i) => (
                 <div key={id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: i < selected.length - 1 ? "1px solid #dbeafe" : "none" }}>
                   <span style={{ fontSize: "14px", color: "#1e40af" }}>
-                    <strong>#{i + 1}</strong> — {getCourseName(id)}
+                    <strong style={{ textTransform: "capitalize" }}>{getChoiceLabel(i)}</strong> — {getCourseName(id)}
                   </span>
                   <div style={{ display: "flex", gap: "6px" }}>
                     {i > 0 && (
@@ -108,8 +110,8 @@ export default function CoursePreferenceSelection({
                       {course.course_name}
                     </span>
                     {isSelected && (
-                      <span style={{ display: "block", fontSize: "12px", color: "#2563eb", marginTop: "4px", fontWeight: "700" }}>
-                        Choice #{rank}
+                      <span style={{ display: "block", fontSize: "12px", color: "#2563eb", marginTop: "4px", fontWeight: "700", textTransform: "capitalize" }}>
+                        {getChoiceLabel(rank - 1)}
                       </span>
                     )}
                   </button>

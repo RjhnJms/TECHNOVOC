@@ -30,18 +30,32 @@ function CustomSelect({
   hasError?: boolean
 }) {
   const [isOpen, setIsOpen] = useState(false)
+  const [isFocused, setIsFocused] = useState(false)
   const selectedOption = options.find(o => o.value === value)
 
   return (
-    <div style={{ position: "relative", width: "100%" }}>
+    <div
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+          setIsOpen(false)
+        }
+      }}
+      style={{ position: "relative", width: "100%" }}
+    >
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
         style={{
           width: "100%",
           padding: "10px 12px",
           borderRadius: "8px",
-          border: hasError ? "1px solid #f87171" : "1px solid #c4b5fd",
+          border: hasError
+            ? "1px solid #f87171"
+            : (isOpen || isFocused)
+            ? "1px solid #a78bfa"
+            : "1px solid #c4b5fd",
           backgroundColor: "white",
           color: "#374151",
           fontSize: "14px",
@@ -53,13 +67,6 @@ function CustomSelect({
           outline: "none",
           fontWeight: "500",
           boxShadow: "0 1px 2px rgba(0,0,0,0.02)",
-        }}
-        onFocus={(e) => {
-          if (!hasError) e.currentTarget.style.borderColor = "#a78bfa"
-        }}
-        onBlur={(e) => {
-          if (!hasError) e.currentTarget.style.borderColor = "#c4b5fd"
-          setTimeout(() => setIsOpen(false), 200)
         }}
       >
         <span style={{ textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
@@ -156,7 +163,6 @@ interface Props {
   studentId: string
   studentName: string
   rankingId?: string | null
-  preferredCourseIds: string[]
   courses: Course[]
   examScoreByCourseId: Record<string, number>
   allowedCourseIds?: string[]
@@ -170,7 +176,6 @@ export default function AssignCoursePanel({
   studentId,
   studentName,
   rankingId = null,
-  preferredCourseIds,
   courses,
   examScoreByCourseId,
   allowedCourseIds,
@@ -203,10 +208,9 @@ export default function AssignCoursePanel({
   const options = allowedCourseIds
     ? allowedCourseIds
         .map(id => courses.find(c => c.id === id))
-        .filter((c): c is Course => !!c && !preferredCourseIds.includes(c.id))
+        .filter((c): c is Course => !!c)
         .map(buildOption)
     : courses
-        .filter(c => !preferredCourseIds.includes(c.id))
         .map(buildOption)
 
   const assignableCount = options.filter(o => !o.disabled).length
@@ -253,7 +257,7 @@ export default function AssignCoursePanel({
         Assign to course
       </p>
       <p style={{ color: "#6b7280", fontSize: "12px", margin: "0 0 12px", lineHeight: 1.45 }}>
-        Choose from the student's top recommended courses. Full courses are disabled.
+        Choose from this student&apos;s top 3 highest-scoring courses outside their preferred choices.
       </p>
 
       {assignableCount === 0 ? (

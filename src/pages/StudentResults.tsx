@@ -1,13 +1,11 @@
 import { useState, useEffect } from "react"
 import { supabase } from "../supabaseClient"
-import { printStudentResults } from "./printResults"
 import {
   getRankingStatusLabel,
   getRankingStatusStyle,
-  getCompetencyLevel,
   QUESTIONS_PER_TRACK,
 } from "../utils/trackRanking"
-import { computeTop3Recommendations } from "../utils/studentRecommendations"
+import { computeTop3Recommendations, getChoiceLabel } from "../utils/studentRecommendations"
 
 interface Props {
   studentId: string
@@ -33,26 +31,18 @@ interface RankingResult {
   courses?: { course_name: string; capacity: number }
 }
 
-interface StudentInfo {
-  lrn: string
-  school_year: string
-}
-
 export default function StudentResults({ studentId, studentName, onLogout, onRetake }: Props) {
   const [assessments, setAssessments] = useState<AssessmentResult[]>([])
   const [rankings, setRankings] = useState<RankingResult[]>([])
   const [assignedCourse, setAssignedCourse] = useState<RankingResult | null>(null)
-  const [studentInfo, setStudentInfo] = useState<StudentInfo>({ lrn: "", school_year: "" })
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<"scores" | "rankings">("scores")
   const [recommendationSource, setRecommendationSource] = useState<"preferred" | "fallback" | "placement_pending" | "assigned">("fallback")
   const [preferredCourseNames, setPreferredCourseNames] = useState<string[]>([])
 
   useEffect(() => {
     const load = async () => {
       setLoading(true)
-      const [sData, aData, rData, pData] = await Promise.all([
-        supabase.from("students").select("lrn, school_year").eq("id", studentId).single(),
+      const [aData, rData, pData] = await Promise.all([
         supabase.from("assessments").select("*, courses(course_name)").eq("student_id", studentId).order("score", { ascending: false }),
         supabase.from("rankings").select("*, courses(course_name, capacity)").eq("student_id", studentId).order("rank", { ascending: true }),
         supabase
@@ -61,7 +51,6 @@ export default function StudentResults({ studentId, studentName, onLogout, onRet
           .eq("student_id", studentId)
           .order("preference_order"),
       ])
-      if (sData.data) setStudentInfo(sData.data)
       const assessmentRows = aData.data || []
       setAssessments(assessmentRows)
 
@@ -128,26 +117,6 @@ export default function StudentResults({ studentId, studentName, onLogout, onRet
     ? new Date(assessments[0].taken_at).toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" })
     : new Date().toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" })
 
-  const handlePrint = () => printStudentResults({
-    studentName,
-    studentLRN: studentInfo.lrn,
-    schoolYear: studentInfo.school_year,
-    takenAt,
-    totalScore,
-    totalItems,
-    top3: top3.map(r => ({
-      course_name: r.courses?.course_name || "",
-      score: r.score,
-      total_items: assessments.find(a => a.courses?.course_name === r.courses?.course_name)?.total_items,
-    })),
-    assessments: assessments.map(a => ({ course_name: a.courses?.course_name || "", score: a.score, total_items: a.total_items })),
-    rankings: rankings.map(r => ({
-      course_name: r.courses?.course_name || "",
-      score: r.score,
-      rank: r.rank,
-      status: r.status,
-    })),
-  })
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "#f3f4f6", width: "100%" }}>
@@ -155,7 +124,6 @@ export default function StudentResults({ studentId, studentName, onLogout, onRet
       {/* Header */}
       <ResultsHeader
         studentName={studentName}
-        onPrint={assessments.length > 0 ? handlePrint : undefined}
         onLogout={onLogout}
       />
 
@@ -178,14 +146,7 @@ export default function StudentResults({ studentId, studentName, onLogout, onRet
               preferredCourseNames={preferredCourseNames}
               assignedCourse={assignedCourse}
             />
-            <ResultTabs
-              activeTab={activeTab}
-              onSwitch={setActiveTab}
-              assessments={assessments}
-              rankings={rankings}
-              totalScore={totalScore}
-              totalItems={totalItems}
-            />
+
           </>
         )}
       </div>
@@ -195,9 +156,8 @@ export default function StudentResults({ studentId, studentName, onLogout, onRet
 
 // ── Sub-components ────────────────────────────────────────
 
-function ResultsHeader({ studentName, onPrint, onLogout }: {
+function ResultsHeader({ studentName, onLogout }: {
   studentName: string
-  onPrint?: () => void
   onLogout: () => void
 }) {
   return (
@@ -207,11 +167,6 @@ function ResultsHeader({ studentName, onPrint, onLogout }: {
         <p style={{ margin: 0, fontSize: "13px", color: "#6b7280" }}>Welcome, {studentName}</p>
       </div>
       <div style={{ display: "flex", gap: "8px" }}>
-        {onPrint && (
-          <button onClick={onPrint} style={btnOutline}>
-            🖨 Print Results
-          </button>
-        )}
         <button onClick={onLogout} style={btnOutline}>
           Logout
         </button>
@@ -296,12 +251,12 @@ function Top3Courses({
       <h3 style={{ fontWeight: "700", fontSize: "17px", margin: "0 0 4px" }}>Your Course Placement & Recommendation</h3>
       <p style={{ color: "#6b7280", fontSize: "13px", margin: "0 0 12px" }}>
         {recommendationSource === "preferred"
-          ? "✅ You scored 6+/10 on all 3 preferred courses. Your top 3 recommendations are based on your preferred courses — #1 is your best match."
+          ? "You passed (6+/10) on all 3 preferred courses. Your placements follow your choice order: 1st choice, 2nd choice, then 3rd."
           : recommendationSource === "placement_pending"
-            ? "⚠️ You did not score 6+/10 on all 3 preferred courses. An administrator will assign you to a suitable track."
+            ? "You did not pass (6+/10) on any of your 3 preferred courses. An administrator will assign you from your top-scoring non-preferred tracks."
             : recommendationSource === "assigned"
-              ? "🏆 You have been successfully placed in a course track."
-              : "📊 Your top 3 course recommendations are based on your highest scores across the full exam."}
+              ? "You have been placed in a course track."
+              : "Your top recommendations are your highest scores outside your 3 preferred choices."}
       </p>
 
       {/* Assigned Placement Banner */}
@@ -326,7 +281,7 @@ function Top3Courses({
       {preferredCourseNames.length > 0 && (
         <div style={{ marginBottom: "16px" }}>
           <div style={{ backgroundColor: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "14px 16px" }}>
-            <p style={{ fontWeight: "700", margin: "0 0 10px", fontSize: "13px", color: "#374151" }}>Your 3 Preferred Courses & Scores:</p>
+            <p style={{ fontWeight: "700", margin: "0 0 10px", fontSize: "13px", color: "#374151" }}>Your ranked choices & scores:</p>
             <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
               {preferredCourseNames.map((name, index) => {
                 const assessment = assessments.find(a => a.courses?.course_name === name)
@@ -344,8 +299,8 @@ function Top3Courses({
                     alignItems: "center"
                   }}>
                     <div>
-                      <p style={{ margin: 0, fontSize: "14px", fontWeight: "700", color: "#111827" }}>
-                        #{index + 1} {name}
+                      <p style={{ margin: 0, fontSize: "14px", fontWeight: "700", color: "#111827", textTransform: "capitalize" }}>
+                        {getChoiceLabel(index)}: {name}
                       </p>
                       <p style={{ margin: "2px 0 0", fontSize: "11.5px", color: "#6b7280" }}>Preferred course</p>
                     </div>
@@ -397,7 +352,7 @@ function Top3Courses({
             <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
               {(recommendationSource === "placement_pending") && (
                 <p style={{ fontSize: "14px", fontWeight: "600", color: "#4b5563", margin: "4px 0 10px" }}>
-                  💡 Here are your top 3 recommended courses based on your exam scores (excluding preferred courses):
+                  💡 Here are your top 3 recommended courses based on your highest exam scores:
                 </p>
               )}
               {top3.map((r, i) => {
@@ -436,124 +391,7 @@ function Top3Courses({
   )
 }
 
-function ResultTabs({ activeTab, onSwitch, assessments, rankings, totalScore, totalItems }: {
-  activeTab: "scores" | "rankings"
-  onSwitch: (tab: "scores" | "rankings") => void
-  assessments: AssessmentResult[]
-  rankings: RankingResult[]
-  totalScore: number
-  totalItems: number
-}) {
-  return (
-    <>
-      <div style={{ display: "flex", gap: "4px", marginBottom: "16px", backgroundColor: "white", padding: "4px", borderRadius: "10px", border: "1px solid #e5e7eb", width: "fit-content" }}>
-        {(["scores", "rankings"] as const).map(tab => (
-          <button key={tab} onClick={() => onSwitch(tab)} style={{ padding: "9px 24px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: "600", fontSize: "14px", backgroundColor: activeTab === tab ? "#111827" : "transparent", color: activeTab === tab ? "white" : "#6b7280" }}>
-            {tab === "scores" ? "Score Breakdown" : "Your Top 3"}
-          </button>
-        ))}
-      </div>
 
-      {activeTab === "scores" ? (
-        <ScoresTable assessments={assessments} totalScore={totalScore} totalItems={totalItems} />
-      ) : (
-        <RankingsTable rankings={rankings} />
-      )}
-    </>
-  )
-}
-
-function ScoresTable({ assessments, totalScore, totalItems }: {
-  assessments: AssessmentResult[]
-  totalScore: number; totalItems: number
-}) {
-  return (
-    <div style={{ backgroundColor: "white", borderRadius: "16px", padding: "24px", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
-      <h3 style={{ fontWeight: "700", fontSize: "16px", margin: "0 0 16px" }}>Score Breakdown by Course</h3>
-      <div className="table-responsive">
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
-          <thead>
-            <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
-              {["Course", "Score", "Out of", "Result"].map(h => (
-                <th key={h} style={{ textAlign: "left", padding: "10px 12px", color: "#6b7280", fontWeight: "600" }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {assessments.map((a, i) => (
-              <tr key={a.id} style={{ borderBottom: "1px solid #f3f4f6", backgroundColor: i % 2 === 0 ? "white" : "#f9fafb" }}>
-                <td style={{ padding: "12px", fontWeight: "500" }}>{a.courses?.course_name}</td>
-                <td style={{ padding: "12px", fontWeight: "700", color: "#2563eb" }}>{a.score}</td>
-                <td style={{ padding: "12px", color: "#6b7280" }}>{a.total_items}</td>
-                <td style={{ padding: "12px" }}>
-                  <span style={{
-                    backgroundColor: getCompetencyLevel(a.score, a.total_items) === "Passed" ? "#dcfce7" : "#fef2f2",
-                    color: getCompetencyLevel(a.score, a.total_items) === "Passed" ? "#16a34a" : "#dc2626",
-                    padding: "3px 12px",
-                    borderRadius: "20px",
-                    fontSize: "12px",
-                    fontWeight: "700",
-                  }}>
-                    {getCompetencyLevel(a.score, a.total_items)}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr style={{ borderTop: "2px solid #e5e7eb", backgroundColor: "#f8fafc" }}>
-              <td style={{ padding: "12px", fontWeight: "700" }}>OVERALL TOTAL</td>
-              <td style={{ padding: "12px", fontWeight: "800", color: "#2563eb", fontSize: "16px" }}>{totalScore}</td>
-              <td style={{ padding: "12px", fontWeight: "700", color: "#6b7280" }}>{totalItems}</td>
-              <td style={{ padding: "12px" }} />
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    </div>
-  )
-}
-
-function RankingsTable({ rankings }: { rankings: RankingResult[] }) {
-  return (
-    <div style={{ backgroundColor: "white", borderRadius: "16px", padding: "24px", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
-      <h3 style={{ fontWeight: "700", fontSize: "16px", margin: "0 0 16px" }}>Your Top 3 Recommendations</h3>
-      <div className="table-responsive">
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
-          <thead>
-            <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
-              {["Course", "Score", "Recommendation", "Result"].map(h => (
-                <th key={h} style={{ textAlign: "left", padding: "10px 12px", color: "#6b7280", fontWeight: "600" }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rankings.map((r, i) => (
-              <tr key={r.id} style={{ borderBottom: "1px solid #f3f4f6", backgroundColor: i % 2 === 0 ? "white" : "#f9fafb" }}>
-                <td style={{ padding: "12px", fontWeight: "500" }}>{r.courses?.course_name}</td>
-                <td style={{ padding: "12px", fontWeight: "700", color: "#2563eb" }}>
-                  {r.score} / {QUESTIONS_PER_TRACK}
-                </td>
-                <td style={{ padding: "12px", fontWeight: "700" }}>#{r.rank}</td>
-                <td style={{ padding: "12px" }}>
-                  <span style={{
-                    ...getRankingStatusStyle(r.status, r.score),
-                    padding: "3px 12px",
-                    borderRadius: "20px",
-                    fontSize: "12px",
-                    fontWeight: "700",
-                  }}>
-                    {getRankingStatusLabel(r.status, r.score)}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
 
 const btnDark: React.CSSProperties = { padding: "10px 24px", backgroundColor: "#111827", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "14px" }
 const btnOutline: React.CSSProperties = { padding: "8px 16px", backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "14px" }

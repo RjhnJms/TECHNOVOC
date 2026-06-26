@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react"
 import { supabase } from "../supabaseClient"
 import { isLabAccessCodeRequired } from "../utils/examAccessCode"
-import { ClipboardList, CheckCircle2, Clock, GraduationCap, Loader2, RefreshCw, Trophy, Users } from "lucide-react"
+import { ClipboardList, CheckCircle2, Clock, GraduationCap, Loader2, RefreshCw, Users } from "lucide-react"
 
 interface OverviewStats {
   totalStudents: number
@@ -253,19 +253,18 @@ export default function OverviewTab() {
         </button>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px", marginBottom: "24px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", marginBottom: "24px" }}>
         {[
           { label: "Total Students", value: stats.totalStudents, icon: <Users size={22} />, color: "#2563eb", bg: "#eff6ff", sub: "registered students" },
           { label: "Not Yet Assessed", value: stats.notYetAssessed, icon: <ClipboardList size={22} />, color: "#dc2626", bg: "#fef2f2", sub: notYetAssessedSub() },
           { label: "Available Slots", value: stats.availableSlots, icon: <CheckCircle2 size={22} />, color: "#16a34a", bg: "#f0fdf4", sub: `of ${stats.totalCapacity} total capacity` },
-          { label: "Most Qualified", value: stats.mostQualifiedCourse, icon: <Trophy size={22} />, color: "#d97706", bg: "#fffbeb", sub: `${stats.mostQualifiedCount} qualified` },
         ].map(stat => (
           <div key={stat.label} style={{ backgroundColor: stat.bg, borderRadius: "14px", padding: "20px", border: `1px solid ${stat.color}22` }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
               <p style={{ color: "#6b7280", fontSize: "13px", margin: 0, fontWeight: "600" }}>{stat.label}</p>
               <span>{stat.icon}</span>
             </div>
-            <h2 style={{ color: stat.color, fontSize: stat.label === "Most Qualified" ? "18px" : "30px", margin: "0 0 4px", fontWeight: "800", lineHeight: 1.1 }}>
+            <h2 style={{ color: stat.color, fontSize: "30px", margin: "0 0 4px", fontWeight: "800", lineHeight: 1.1 }}>
               {loading ? "—" : stat.value}
             </h2>
             <p style={{ color: "#9ca3af", fontSize: "12px", margin: 0 }}>{loading ? "..." : stat.sub}</p>

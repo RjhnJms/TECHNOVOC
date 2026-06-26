@@ -1,13 +1,18 @@
 import { useState, useEffect, useMemo } from "react"
 import { supabase } from "../supabaseClient"
-import { Download, FileText, RefreshCw, Search, ChevronDown } from "lucide-react"
-import { QUESTIONS_PER_TRACK, getCompetencyLevel } from "../utils/trackRanking"
+import { Download, FileText, RefreshCw, Search, Users, X, ChevronDown } from "lucide-react"
+
 import ConfirmDialog from "../components/ConfirmDialog"
 
 interface Course {
   id: string
   course_name: string
   capacity: number
+}
+
+interface CourseSummary extends Course {
+  enrolled: number
+  available: number
 }
 
 interface IncludedRanking {
@@ -22,123 +27,6 @@ interface IncludedRanking {
     school_year: string
   } | null
   courses?: { course_name: string } | null
-}
-
-function CustomSelect({
-  value,
-  onChange,
-  options,
-}: {
-  value: string
-  onChange: (val: string) => void
-  options: { value: string; label: string }[]
-}) {
-  const [isOpen, setIsOpen] = useState(false)
-  const selectedOption = options.find(o => o.value === value)
-
-  return (
-    <div style={{ position: "relative", width: "100%" }}>
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        style={{
-          width: "100%",
-          padding: "10px 14px",
-          borderRadius: "8px",
-          border: "1px solid #e5e7eb",
-          backgroundColor: "white",
-          color: "#374151",
-          fontSize: "14px",
-          textAlign: "left",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          cursor: "pointer",
-          outline: "none",
-          boxShadow: "0 1px 2px rgba(0,0,0,0.02)",
-          fontWeight: "500",
-        }}
-        onFocus={(e) => {
-          e.currentTarget.style.borderColor = "#6366f1"
-        }}
-        onBlur={(e) => {
-          e.currentTarget.style.borderColor = "#e5e7eb"
-          setTimeout(() => setIsOpen(false), 200)
-        }}
-      >
-        <span>{selectedOption?.label || "Select track..."}</span>
-        <ChevronDown
-          size={16}
-          style={{
-            transform: isOpen ? "rotate(180deg)" : "rotate(0deg)",
-            transition: "transform 0.2s ease",
-            color: "#9ca3af",
-          }}
-        />
-      </button>
-
-      {isOpen && (
-        <div
-          style={{
-            position: "absolute",
-            top: "calc(100% + 6px)",
-            left: 0,
-            right: 0,
-            backgroundColor: "white",
-            borderRadius: "8px",
-            border: "1px solid #e5e7eb",
-            boxShadow: "0 10px 25px -5px rgba(0,0,0,0.08), 0 8px 10px -6px rgba(0,0,0,0.08)",
-            zIndex: 1000,
-            maxHeight: "260px",
-            overflowY: "auto",
-            padding: "4px",
-          }}
-        >
-          {options.map((opt) => {
-            const isSelected = opt.value === value
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => {
-                  onChange(opt.value)
-                  setIsOpen(false)
-                }}
-                style={{
-                  width: "100%",
-                  padding: "9px 12px",
-                  border: "none",
-                  borderRadius: "6px",
-                  backgroundColor: isSelected ? "#f3f4f6" : "transparent",
-                  color: isSelected ? "#111827" : "#4b5563",
-                  fontSize: "14px",
-                  fontWeight: isSelected ? "600" : "400",
-                  textAlign: "left",
-                  cursor: "pointer",
-                  display: "block",
-                  transition: "background-color 0.1s ease",
-                }}
-                onMouseEnter={(e) => {
-                  if (!isSelected) {
-                    e.currentTarget.style.backgroundColor = "#fafafa"
-                    e.currentTarget.style.color = "#111827"
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!isSelected) {
-                    e.currentTarget.style.backgroundColor = "transparent"
-                    e.currentTarget.style.color = "#4b5563"
-                  }
-                }}
-              >
-                {opt.label}
-              </button>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
 }
 
 function escapeCsv(value: string): string {
@@ -162,6 +50,8 @@ export default function ReportsTab() {
   const [searchQuery, setSearchQuery] = useState("")
   const [loading, setLoading] = useState(true)
   const [confirmDialog, setConfirmDialog] = useState<"track" | "all" | null>(null)
+  const [exportTrackId, setExportTrackId] = useState("")
+  const [showExportDropdown, setShowExportDropdown] = useState(false)
 
   const fetchData = async () => {
     setLoading(true)
@@ -177,10 +67,6 @@ export default function ReportsTab() {
     setCourses(courseData || [])
     setIncluded((rankData || []) as unknown as IncludedRanking[])
 
-    if (courseData?.length && !selectedCourse) {
-      setSelectedCourse(courseData[0].id)
-    }
-
     setLoading(false)
   }
 
@@ -189,7 +75,24 @@ export default function ReportsTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const selected = courses.find(c => c.id === selectedCourse)
+  const courseSummaries = useMemo<CourseSummary[]>(
+    () =>
+      courses.map(course => {
+        const enrolled = included.filter(r => r.course_id === course.id).length
+        return {
+          ...course,
+          enrolled,
+          available: Math.max(0, course.capacity - enrolled),
+        }
+      }),
+    [courses, included]
+  )
+
+  const totalCapacity = courseSummaries.reduce((sum, course) => sum + course.capacity, 0)
+  const totalEnrolled = courseSummaries.reduce((sum, course) => sum + course.enrolled, 0)
+  const totalAvailable = courseSummaries.reduce((sum, course) => sum + course.available, 0)
+
+  const selected = courseSummaries.find(c => c.id === selectedCourse)
   const courseRoster = useMemo(
     () =>
       included
@@ -207,18 +110,15 @@ export default function ReportsTab() {
     )
   })
 
-  const slotsFilled = courseRoster.length
-  const slotsOpen = selected ? Math.max(0, selected.capacity - slotsFilled) : 0
+  const slotsFilled = selected?.enrolled ?? courseRoster.length
+  const slotsOpen = selected?.available ?? 0
 
   const buildRowsForRankings = (rows: IncludedRanking[], courseName?: string) => {
     const header = [
-      "Track",
-      "Rank",
+      "Enrolled Course",
       "Student Name",
       "LRN",
       "School Year",
-      `Score (/${QUESTIONS_PER_TRACK})`,
-      "Result",
       "Status",
     ]
     const data = rows
@@ -236,22 +136,23 @@ export default function ReportsTab() {
           ""
         return [
           track,
-          String(r.rank),
           r.students?.full_name || "",
           r.students?.lrn || "",
           r.students?.school_year || "",
-          String(r.score),
-          getCompetencyLevel(r.score, QUESTIONS_PER_TRACK),
           "Included",
         ]
       })
     return [header, ...data]
   }
 
-  const exportCurrentTrack = () => {
-    if (!selected) return
-    const rows = buildRowsForRankings(courseRoster, selected.course_name)
-    downloadCsv(`final-roster-${selected.course_name.replace(/\s+/g, "-")}.csv`, rows)
+  const exportSpecificTrack = (courseId: string) => {
+    const course = courses.find(c => c.id === courseId)
+    if (!course) return
+    const roster = included
+      .filter(r => r.course_id === courseId)
+      .sort((a, b) => a.rank - b.rank || b.score - a.score)
+    const rows = buildRowsForRankings(roster, course.course_name)
+    downloadCsv(`final-roster-${course.course_name.replace(/\s+/g, "-")}.csv`, rows)
   }
 
   const exportAllTracks = () => {
@@ -262,6 +163,14 @@ export default function ReportsTab() {
       return a.rank - b.rank || b.score - a.score
     })
     downloadCsv("final-rosters-all-tracks.csv", buildRowsForRankings(sorted))
+  }
+
+  const exportTrackName = courses.find(c => c.id === exportTrackId)?.course_name
+  const exportTrackEnrolled = included.filter(r => r.course_id === exportTrackId).length
+
+  const viewCourseStudents = (courseId: string) => {
+    setSelectedCourse(courseId)
+    setSearchQuery("")
   }
 
   const busy = loading
@@ -278,20 +187,107 @@ export default function ReportsTab() {
             Final rosters per track — students who passed (6+ / 10) and are <strong>included</strong> in each course ranking.
           </p>
         </div>
-        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
           <button type="button" onClick={() => void fetchData()} disabled={busy} style={btnOutline}>
             <RefreshCw size={16} />
             Reload
           </button>
-          <button
-            type="button"
-            onClick={() => setConfirmDialog("track")}
-            disabled={busy || !selectedCourse || courseRoster.length === 0}
-            style={btnDark}
-          >
-            <Download size={16} />
-            Export track
-          </button>
+
+          {/* Export specific track dropdown */}
+          <div style={{ position: "relative" }}>
+            <button
+              type="button"
+              onClick={() => setShowExportDropdown(!showExportDropdown)}
+              disabled={busy || courses.length === 0}
+              style={btnDark}
+            >
+              <Download size={16} />
+              Export track
+              <ChevronDown size={14} style={{ marginLeft: "2px", transition: "transform 0.2s", transform: showExportDropdown ? "rotate(180deg)" : "rotate(0)" }} />
+            </button>
+
+            {showExportDropdown && (
+              <>
+                {/* Invisible backdrop to close dropdown */}
+                <div
+                  onClick={() => setShowExportDropdown(false)}
+                  style={{ position: "fixed", inset: 0, zIndex: 998 }}
+                />
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "calc(100% + 6px)",
+                    right: 0,
+                    backgroundColor: "white",
+                    borderRadius: "10px",
+                    boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
+                    border: "1px solid #e5e7eb",
+                    minWidth: "260px",
+                    zIndex: 999,
+                    overflow: "hidden",
+                    animation: "dropdownIn 0.15s ease-out",
+                  }}
+                >
+                  <div style={{ padding: "12px 14px 8px", borderBottom: "1px solid #f3f4f6" }}>
+                    <p style={{ margin: 0, fontSize: "12px", fontWeight: "700", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                      Select a track to export
+                    </p>
+                  </div>
+                  <div style={{ maxHeight: "260px", overflowY: "auto", padding: "4px 0" }}>
+                    {courses.map(course => {
+                      const enrolled = included.filter(r => r.course_id === course.id).length
+                      return (
+                        <button
+                          key={course.id}
+                          type="button"
+                          onClick={() => {
+                            setExportTrackId(course.id)
+                            setShowExportDropdown(false)
+                            setConfirmDialog("track")
+                          }}
+                          disabled={enrolled === 0}
+                          style={{
+                            width: "100%",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: "8px",
+                            padding: "10px 14px",
+                            border: "none",
+                            backgroundColor: "transparent",
+                            cursor: enrolled > 0 ? "pointer" : "not-allowed",
+                            fontSize: "14px",
+                            color: enrolled > 0 ? "#1f2937" : "#d1d5db",
+                            fontWeight: "500",
+                            textAlign: "left",
+                            transition: "background 0.1s",
+                          }}
+                          onMouseEnter={e => { if (enrolled > 0) e.currentTarget.style.backgroundColor = "#f3f4f6" }}
+                          onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent" }}
+                        >
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {course.course_name}
+                          </span>
+                          <span style={{
+                            fontSize: "11px",
+                            fontWeight: "700",
+                            padding: "2px 8px",
+                            borderRadius: "999px",
+                            flexShrink: 0,
+                            backgroundColor: enrolled > 0 ? "#f0fdf4" : "#f9fafb",
+                            color: enrolled > 0 ? "#16a34a" : "#9ca3af",
+                          }}>
+                            {enrolled} student{enrolled !== 1 ? "s" : ""}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
           <button
             type="button"
             onClick={() => setConfirmDialog("all")}
@@ -304,36 +300,123 @@ export default function ReportsTab() {
         </div>
       </div>
 
-      <div style={card}>
-        <p style={{ fontWeight: "600", margin: "0 0 4px" }}>Select track</p>
-        <p style={{ color: "#6b7280", fontSize: "13px", margin: "0 0 12px" }}>
-          View the final included list for each TVE course
-        </p>
-        <CustomSelect
-          value={selectedCourse}
-          onChange={val => {
-            setSelectedCourse(val)
-            setSearchQuery("")
-          }}
-          options={courses.map(c => ({
-            value: c.id,
-            label: `${c.course_name} (${included.filter(r => r.course_id === c.id).length} included)`,
-          }))}
-        />
+      <div style={{ ...card, marginBottom: "16px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", flexWrap: "wrap", marginBottom: "18px" }}>
+          <div>
+            <h3 style={{ fontWeight: "800", fontSize: "18px", margin: "0 0 4px", display: "flex", alignItems: "center", gap: 8 }}>
+              <Users size={18} />
+              Course Slots and Enrolled Students
+            </h3>
+            <p style={{ color: "#6b7280", fontSize: "13px", margin: 0 }}>
+              See available slots for every course and open the enrolled student list below.
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            {[
+              { label: "Total capacity", value: totalCapacity, color: "#2563eb" },
+              { label: "Enrolled", value: totalEnrolled, color: "#16a34a" },
+              { label: "Available slots", value: totalAvailable, color: "#f59e0b" },
+            ].map(stat => (
+              <div key={stat.label} style={miniStat}>
+                <p style={{ margin: "0 0 2px", fontSize: "18px", fontWeight: "800", color: stat.color }}>{stat.value}</p>
+                <p style={{ margin: 0, fontSize: "11px", color: "#6b7280", whiteSpace: "nowrap" }}>{stat.label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {loading ? (
+          <p style={{ textAlign: "center", color: "#9ca3af", padding: "28px 0" }}>Loading course slots...</p>
+        ) : courseSummaries.length === 0 ? (
+          <p style={{ textAlign: "center", color: "#9ca3af", padding: "28px 0" }}>No courses found.</p>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px", minWidth: "680px" }}>
+              <thead>
+                <tr style={{ borderBottom: "2px solid #e5e7eb", backgroundColor: "#f9fafb" }}>
+                  {["Course", "Capacity", "Enrolled", "Available slots", "Status", "Students"].map(h => (
+                    <th key={h} style={thStyle}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {courseSummaries.map((course, i) => {
+                  const isSelected = course.id === selectedCourse
+                  const isFull = course.available === 0
+                  return (
+                    <tr
+                      key={course.id}
+                      style={{
+                        borderBottom: "1px solid #f3f4f6",
+                        backgroundColor: isSelected ? "#eef2ff" : i % 2 === 0 ? "white" : "#f9fafb",
+                      }}
+                    >
+                      <td style={{ ...tdStyle, fontWeight: "700" }}>{course.course_name}</td>
+                      <td style={tdStyle}>{course.capacity}</td>
+                      <td style={{ ...tdStyle, color: "#16a34a", fontWeight: "700" }}>{course.enrolled}</td>
+                      <td style={{ ...tdStyle, color: isFull ? "#dc2626" : "#f59e0b", fontWeight: "700" }}>
+                        {course.available}
+                      </td>
+                      <td style={tdStyle}>
+                        <span style={{
+                          backgroundColor: isFull ? "#fef2f2" : "#f0fdf4",
+                          color: isFull ? "#dc2626" : "#15803d",
+                          padding: "4px 10px",
+                          borderRadius: "999px",
+                          fontSize: "12px",
+                          fontWeight: "700",
+                        }}>
+                          {isFull ? "Full" : "Open"}
+                        </span>
+                      </td>
+                      <td style={tdStyle}>
+                        <button
+                          type="button"
+                          onClick={() => viewCourseStudents(course.id)}
+                          style={isSelected ? btnSelectedSmall : btnSmall}
+                        >
+                          View students
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {selected && (
-        <div style={{ ...card, marginTop: "16px" }}>
-          <div style={{ marginBottom: "16px" }}>
+        <div
+          onClick={e => {
+            if (e.target === e.currentTarget) setSelectedCourse("")
+          }}
+          style={modalBackdrop}
+        >
+          <div style={modalPanel}>
+          <div style={modalHeader}>
+            <div>
             <h3 style={{ fontWeight: "800", fontSize: "20px", margin: "0 0 4px" }}>{selected.course_name}</h3>
             <p style={{ color: "#6b7280", fontSize: "13px", margin: 0 }}>
-              <span style={{ color: "#16a34a", fontWeight: "600" }}>{slotsFilled} included</span>
+              <span style={{ color: "#16a34a", fontWeight: "600" }}>{slotsFilled} enrolled</span>
               {" · "}
               {slotsOpen} slot{slotsOpen === 1 ? "" : "s"} open
               {" · "}
               Capacity {selected.capacity}
             </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelectedCourse("")}
+              style={iconButton}
+              aria-label="Close enrolled students window"
+            >
+              <X size={18} />
+            </button>
           </div>
+
+          <div style={{ padding: "20px 24px" }}>
 
           <div style={{ position: "relative", marginBottom: "16px" }}>
             <Search size={16} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "#9ca3af" }} />
@@ -357,7 +440,7 @@ export default function ReportsTab() {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
               <thead>
                 <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
-                  {["Rank", "Student", "LRN", "School year", "Score", "Result"].map(h => (
+                  {["Student", "LRN", "School year", "Enrolled Course"].map(h => (
                     <th key={h} style={thStyle}>{h}</th>
                   ))}
                 </tr>
@@ -368,30 +451,17 @@ export default function ReportsTab() {
                     key={r.id}
                     style={{ borderBottom: "1px solid #f3f4f6", backgroundColor: i % 2 === 0 ? "white" : "#f9fafb" }}
                   >
-                    <td style={tdStyle}>#{r.rank}</td>
                     <td style={{ ...tdStyle, fontWeight: "600" }}>{r.students?.full_name || "—"}</td>
                     <td style={tdStyle}>{r.students?.lrn || "—"}</td>
                     <td style={tdStyle}>{r.students?.school_year || "—"}</td>
-                    <td style={{ ...tdStyle, fontWeight: "700", color: "#2563eb" }}>
-                      {r.score} / {QUESTIONS_PER_TRACK}
-                    </td>
-                    <td style={tdStyle}>
-                      <span style={{
-                        backgroundColor: getCompetencyLevel(r.score, QUESTIONS_PER_TRACK) === "Passed" ? "#dcfce7" : "#fef2f2",
-                        color: getCompetencyLevel(r.score, QUESTIONS_PER_TRACK) === "Passed" ? "#16a34a" : "#dc2626",
-                        padding: "3px 10px",
-                        borderRadius: "20px",
-                        fontSize: "12px",
-                        fontWeight: "700",
-                      }}>
-                        {getCompetencyLevel(r.score, QUESTIONS_PER_TRACK)}
-                      </span>
-                    </td>
+                    <td style={{ ...tdStyle, fontWeight: "600" }}>{r.courses?.course_name || "—"}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
+        </div>
+        </div>
         </div>
       )}
 
@@ -409,20 +479,31 @@ export default function ReportsTab() {
         title="Export Report"
         message={confirmDialog === "all"
           ? "Are you sure you want to export the final rosters for all tracks to a CSV file?"
-          : `Are you sure you want to export the final roster for "${selected?.course_name}" to a CSV file?`
+          : `Are you sure you want to export the final roster for "${exportTrackName}" (${exportTrackEnrolled} student${exportTrackEnrolled !== 1 ? "s" : ""}) to a CSV file?`
         }
         confirmLabel="Export"
         variant="export"
         onConfirm={() => {
           if (confirmDialog === "all") {
             exportAllTracks()
-          } else if (confirmDialog === "track") {
-            exportCurrentTrack()
+          } else if (confirmDialog === "track" && exportTrackId) {
+            exportSpecificTrack(exportTrackId)
           }
           setConfirmDialog(null)
+          setExportTrackId("")
         }}
-        onCancel={() => setConfirmDialog(null)}
+        onCancel={() => {
+          setConfirmDialog(null)
+          setExportTrackId("")
+        }}
       />
+
+      <style>{`
+        @keyframes dropdownIn {
+          from { opacity: 0; transform: translateY(-6px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
     </div>
   )
 }
@@ -451,6 +532,56 @@ const thStyle: React.CSSProperties = {
   fontWeight: "600",
 }
 const tdStyle: React.CSSProperties = { padding: "12px" }
+const miniStat: React.CSSProperties = {
+  minWidth: "112px",
+  padding: "10px 12px",
+  borderRadius: "8px",
+  border: "1px solid #e5e7eb",
+  backgroundColor: "#f9fafb",
+}
+const modalBackdrop: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  backgroundColor: "rgba(17, 24, 39, 0.55)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "20px",
+  zIndex: 1000,
+}
+const modalPanel: React.CSSProperties = {
+  width: "100%",
+  maxWidth: "860px",
+  maxHeight: "88vh",
+  overflowY: "auto",
+  backgroundColor: "white",
+  borderRadius: "14px",
+  boxShadow: "0 24px 64px rgba(0,0,0,0.28)",
+}
+const modalHeader: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "flex-start",
+  gap: "16px",
+  padding: "22px 24px",
+  borderBottom: "1px solid #e5e7eb",
+  position: "sticky",
+  top: 0,
+  backgroundColor: "white",
+  zIndex: 1,
+}
+const iconButton: React.CSSProperties = {
+  width: "36px",
+  height: "36px",
+  borderRadius: "8px",
+  border: "1px solid #e5e7eb",
+  backgroundColor: "white",
+  color: "#374151",
+  cursor: "pointer",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+}
 const btnDark: React.CSSProperties = {
   padding: "10px 16px",
   backgroundColor: "#374151",
@@ -469,4 +600,20 @@ const btnOutline: React.CSSProperties = {
   backgroundColor: "white",
   color: "#374151",
   border: "1px solid #e5e7eb",
+}
+const btnSmall: React.CSSProperties = {
+  padding: "7px 12px",
+  backgroundColor: "white",
+  color: "#374151",
+  border: "1px solid #e5e7eb",
+  borderRadius: "8px",
+  cursor: "pointer",
+  fontWeight: "700",
+  fontSize: "12px",
+}
+const btnSelectedSmall: React.CSSProperties = {
+  ...btnSmall,
+  backgroundColor: "#111827",
+  color: "white",
+  border: "1px solid #111827",
 }

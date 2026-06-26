@@ -1,3 +1,5 @@
+import { getChoiceLabel } from "../utils/studentRecommendations"
+
 interface Props {
   studentName: string
   alreadyTaken: boolean
@@ -74,11 +76,12 @@ export default function AssessmentIntro({
               "Question pool: each track has 20 questions; your exam randomly selects 10 from that pool",
               "Anti-cheating: each student gets their own random 10 per track, plus shuffled answer options",
               "Passing Score: 6 out of 10 (60%) per track — score 6–10 is Passed, below 6 is Failed",
-              "Top 3 recommendations: pass all 3 preferred courses (6+/10) to qualify on those; otherwise your 3 highest scores overall",
+              "If you score 6+/10 on all 3 preferred courses, rankings use those courses (ties broken by 1st, 2nd, then 3rd choice)",
+              "If you score below 6 on any preferred course, your top 3 recommendations come from your highest scores on other courses",
               "Time Limit: 60 minutes — the assessment auto-submits when time runs out",
               "Skips: You may skip up to 5 questions (skipped questions count as incorrect)",
               "Question Types: Pre-skilled and Aptitude",
-              "Your 3 preferred courses determine qualification when you score 6+ on each of them",
+              "Your 3 ranked choices (1st, 2nd, 3rd) determine tie-breakers when you qualify on preferred courses",
             ].map((item, i) => (
               <p key={i} style={{ color: "#1e40af", fontSize: "14px", margin: "0 0 6px" }}>• {item}</p>
             ))}
@@ -95,8 +98,8 @@ export default function AssessmentIntro({
                 )}
               </div>
               {preferredCourses.map((name, i) => (
-                <p key={name} style={{ color: "#166534", fontSize: "14px", margin: "0 0 4px" }}>
-                  #{i + 1} {name}
+                <p key={name} style={{ color: "#166534", fontSize: "14px", margin: "0 0 4px", textTransform: "capitalize" }}>
+                  {getChoiceLabel(i)}: {name}
                 </p>
               ))}
             </div>

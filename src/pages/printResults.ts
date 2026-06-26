@@ -30,7 +30,7 @@ export function printStudentResults(opts: PrintResultsOptions) {
   const {
     studentName, studentLRN, schoolYear, takenAt,
     totalScore, totalItems,
-    assessments, rankings
+    rankings
   } = opts
 
   const statusLabel = (s?: string, score?: number) => {
@@ -52,14 +52,7 @@ export function printStudentResults(opts: PrintResultsOptions) {
     </tr>
   `).join("")
 
-  const assessmentRows = assessments.map((a, i) => `
-    <tr>
-      <td>${i + 1}</td>
-      <td>${a.course_name}</td>
-      <td><strong>${a.score}</strong></td>
-      <td>${a.total_items}</td>
-    </tr>
-  `).join("")
+
 
 
   const html = `
@@ -146,15 +139,7 @@ export function printStudentResults(opts: PrintResultsOptions) {
     </table>
   </div>
 
-  <div class="section">
-    <div class="section-title">Score Breakdown by Course</div>
-    <table>
-      <thead>
-        <tr><th>No.</th><th>Course</th><th>Score</th><th>Total Items</th></tr>
-      </thead>
-      <tbody>${assessmentRows}</tbody>
-    </table>
-  </div>
+
 
   <div class="footer">
     <div class="footer-sig">

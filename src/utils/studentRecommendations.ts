@@ -34,6 +34,34 @@ export function getChoiceLabel(preferenceIndex: number): string {
  * Auto-placement (single course): first passing preferred by choice order (1st, then 2nd, then 3rd),
  * regardless of score. Skips courses at capacity when saving.
  */
+/**
+ * Sort courses by score descending, then randomly shuffle courses with equal
+ * scores so no course gets a systematic positional advantage.
+ */
+function fairScoreSort(scores: CourseScore[]): CourseScore[] {
+  // Group by score
+  const byScore = new Map<number, CourseScore[]>()
+  for (const s of scores) {
+    const list = byScore.get(s.score) || []
+    list.push(s)
+    byScore.set(s.score, list)
+  }
+
+  // Sort score groups descending, shuffle within each group
+  const sortedKeys = [...byScore.keys()].sort((a, b) => b - a)
+  const result: CourseScore[] = []
+  for (const key of sortedKeys) {
+    const group = byScore.get(key)!
+    // Fisher-Yates shuffle for fair randomization
+    for (let i = group.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [group[i], group[j]] = [group[j], group[i]]
+    }
+    result.push(...group)
+  }
+  return result
+}
+
 export function computeTop3Recommendations(
   allScores: CourseScore[],
   preferredCourseIds: string[]
@@ -61,13 +89,9 @@ export function computeTop3Recommendations(
       .map(id => scoreByCourse.get(id))
       .filter((s): s is CourseScore => !!s)
   } else {
-    picks = allScores
-      .filter(s => !preferredSet.has(s.course_id))
-      .sort((a, b) => {
-        if (b.score !== a.score) return b.score - a.score
-        return a.course_id.localeCompare(b.course_id)
-      })
-      .slice(0, 3)
+    picks = fairScoreSort(
+      allScores.filter(s => !preferredSet.has(s.course_id))
+    ).slice(0, 3)
   }
 
   return picks.map((s, index) => ({
@@ -197,7 +221,7 @@ async function pickPassedPreferredWithSlot(
 async function pickHighestScoringWithSlot(
   allScores: CourseScore[]
 ): Promise<{ course_id: string; score: number } | null> {
-  const sorted = [...allScores].sort((a, b) => b.score - a.score)
+  const sorted = fairScoreSort([...allScores])
   for (const s of sorted) {
     const slotsLeft = await getCourseSlotsLeft(s.course_id)
     if (slotsLeft > 0) return { course_id: s.course_id, score: s.score }

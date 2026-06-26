@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from "react"
+import ConfirmDialog from "../components/ConfirmDialog"
 
 interface Question {
   id: number
@@ -50,6 +51,8 @@ export default function AssessmentQuestion({
   const [timeRemaining, setTimeRemaining] = useState(() =>
     assessmentEndTime ? assessmentEndTime - Date.now() : 0
   )
+  const [showSkipConfirm, setShowSkipConfirm] = useState(false)
+  const [pendingSkipIndex, setPendingSkipIndex] = useState<number | null>(null)
   const topRef = useRef<HTMLDivElement>(null)
 
   // Derive which "page" (section of 10) we are on from currentIndex
@@ -315,9 +318,8 @@ export default function AssessmentQuestion({
                   <div style={{ marginTop: "12px", marginLeft: "36px" }}>
                     <button
                       onClick={() => {
-                        // navigate to this question globally and then skip
-                        onNavigate(globalIdx)
-                        setTimeout(onSkip, 50)
+                        setPendingSkipIndex(globalIdx)
+                        setShowSkipConfirm(true)
                       }}
                       disabled={skipsRemaining === 0}
                       title={skipsRemaining === 0 ? "No skips remaining" : "Mark as skipped"}
@@ -564,6 +566,25 @@ export default function AssessmentQuestion({
         </div>
 
       </div>
+      <ConfirmDialog
+        open={showSkipConfirm}
+        title="Skip Question"
+        message={`Are you sure you want to skip this question? Skipped questions are scored as incorrect. You have ${skipsRemaining} skip${skipsRemaining === 1 ? "" : "s"} remaining.`}
+        confirmLabel="Skip"
+        variant="warning"
+        onConfirm={() => {
+          setShowSkipConfirm(false)
+          if (pendingSkipIndex !== null) {
+            onNavigate(pendingSkipIndex)
+            setTimeout(onSkip, 50)
+          }
+          setPendingSkipIndex(null)
+        }}
+        onCancel={() => {
+          setShowSkipConfirm(false)
+          setPendingSkipIndex(null)
+        }}
+      />
     </div>
   )
 }

@@ -104,7 +104,7 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
           >
             <option value="all">All School Years</option>
             {schoolYears.map(sy => (
-              <option key={sy} value={sy}>{sy} & prior</option>
+              <option key={sy} value={sy}>{sy}</option>
             ))}
           </select>
           <button

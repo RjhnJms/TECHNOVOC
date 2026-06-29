@@ -4,8 +4,7 @@ import logo from "../assets/NAVS LOGO.svg"
 import type { UserSession } from "../types/session"
 import { generateSchoolYears, getSchoolYearFromDate, getStartYear } from "../utils/schoolYear"
 
-const currentStart = getStartYear(getSchoolYearFromDate())
-const schoolYearOptions = generateSchoolYears(currentStart, 0)
+const schoolYearOptions = generateSchoolYears(2023, 1).reverse()
 
 
 type StudentMode = "login" | "signup"

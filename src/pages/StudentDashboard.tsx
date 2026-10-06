@@ -7,7 +7,6 @@ import CoursePreferenceSelection, { type CourseOption } from "./CoursePreference
 import AssessmentCompleteModal from "../components/AssessmentCompleteModal"
 import { selectExamQuestions, countExamQuestions, shuffleRandom } from "../utils/examQuestions"
 import { isPassingScore } from "../utils/trackRanking"
-import { saveStudentRecommendations } from "../utils/studentRecommendations"
 import {
   isLabAccessCodeRequired,
   isLabCodeVerifiedLocally,
@@ -408,15 +407,7 @@ export default function StudentDashboard({ studentId, studentName, onLogout }: P
         throw new Error(assessmentError.message)
       }
 
-      const recResult = await saveStudentRecommendations(
-        studentId,
-        scores.map(s => ({ course_id: s.course_id, score: s.score, total_items: s.total })),
-        preferredCourseIds
-      )
-      if (recResult.error) {
-        console.warn("Recommendations could not be saved:", recResult.error)
-      }
-
+      // Placement is not decided here; the admin runs it for everyone after the exam period.
       setAlreadyTaken(true)
       setShowCompleteModal(true)
     } catch (err) {
@@ -430,7 +421,7 @@ export default function StudentDashboard({ studentId, studentName, onLogout }: P
     } finally {
       setSubmitting(false)
     }
-  }, [studentId, questions, answers, preferredCourseIds])
+  }, [studentId, questions, answers])
 
   // Auto-submit once when the 60-minute timer expires
   useEffect(() => {

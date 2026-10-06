@@ -147,13 +147,13 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
       <div className="admin-content">
         {activeTab === "overview" && <OverviewTab schoolYearFilter={schoolYearFilter} />}
         {activeTab === "courses" && <CoursesTab />}
-        {activeTab === "results" && <ResultsTab schoolYearFilter={schoolYearFilter} />}
+        {activeTab === "results" && <ResultsTab schoolYearFilter={schoolYearFilter} adminName={adminName} />}
         {activeTab === "reports" && <ReportsTab schoolYearFilter={schoolYearFilter} />}
         {activeTab === "settings" && <SettingsTab />}
       </div>
 
       {selectedStudent && (
-        <StudentDetailModal student={selectedStudent} onClose={() => setSelectedStudent(null)} />
+        <StudentDetailModal student={selectedStudent} adminName={adminName} onClose={() => setSelectedStudent(null)} />
       )}
     </div>
   )

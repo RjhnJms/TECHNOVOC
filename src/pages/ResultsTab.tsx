@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react"
 import { supabase } from "../supabaseClient"
 import { Search, Trash2, Eye } from "lucide-react"
 import StudentDetailModal from "./StudentDetailModal"
+import PlacementPanel from "../components/PlacementPanel"
 import ConfirmDialog from "../components/ConfirmDialog"
 import { SkeletonTableRows } from "../components/Skeleton"
 import { getStartYear } from "../utils/schoolYear"
@@ -29,9 +30,10 @@ interface PlacementInfo {
 
 interface Props {
   schoolYearFilter: string
+  adminName: string
 }
 
-export default function ResultsTab({ schoolYearFilter }: Props) {
+export default function ResultsTab({ schoolYearFilter, adminName }: Props) {
   const [students, setStudents] = useState<Student[]>([])
   const [courses, setCourses] = useState<Course[]>([])
   const [loading, setLoading] = useState(true)
@@ -265,6 +267,8 @@ export default function ResultsTab({ schoolYearFilter }: Props) {
         </div>
       </div>
 
+      <PlacementPanel key={schoolYearFilter} schoolYear={schoolYearFilter} adminName={adminName} onChanged={() => { void fetchData() }} />
+
       {/* Student records */}
       <div
         style={{
@@ -465,24 +469,24 @@ export default function ResultsTab({ schoolYearFilter }: Props) {
           padding: "20px",
         }}
       >
-        <p style={{ fontWeight: "700", color: "#1d4ed8", margin: "0 0 10px" }}>How recommendations work</p>
+        <p style={{ fontWeight: "700", color: "#1d4ed8", margin: "0 0 10px" }}>How placement works</p>
         <ul style={{ paddingLeft: "16px", color: "#1e40af", fontSize: "13px", lineHeight: "2", margin: 0 }}>
           <li>
-            Each student selects <strong>3 preferred courses</strong> before the exam.
+            Each student selects <strong>3 preferred courses</strong> before the exam. Passing score per track: <strong>6 out of 10</strong>.
           </li>
           <li>
-            Passing score per track: <strong>6 out of 10</strong>.
+            No one is placed when they submit. After the exam period, click <strong>Run Placement</strong> for the school year, so everyone is placed at the same time.
           </li>
           <li>
-            If they pass on <strong>all 3 preferred courses</strong> (6+/10), those become their top 3 —{" "}
-            <strong>highest score = #1</strong>, with ties broken by <strong>1st, 2nd, then 3rd choice</strong>.
+            Students who passed a preferred course are placed in their <strong>highest passed choice</strong>. When slots are limited, priority goes to the
+            higher score in that course, then the higher overall exam score, then the higher choice.
           </li>
           <li>
-            If they do <strong>not</strong> pass all 3 preferred courses, their top 3 are the{" "}
-            <strong>highest-scoring courses outside their 3 choices</strong>.
+            Students who did not pass any preferred course, or whose passed courses are full, go to the <strong>Waitlist</strong>. Use <strong>View</strong> to
+            place them in one of their top 3 highest-scoring courses outside their choices.
           </li>
           <li>
-            Use <strong>View</strong> on a student to see preferred course scores or top 3 recommendations.
+            Click <strong>Release Results</strong> so all students see their placement at the same time.
           </li>
         </ul>
       </div>
@@ -490,6 +494,7 @@ export default function ResultsTab({ schoolYearFilter }: Props) {
       {selectedStudent && (
         <StudentDetailModal
           student={selectedStudent}
+          adminName={adminName}
           onClose={() => {
             setSelectedStudent(null)
             fetchData()

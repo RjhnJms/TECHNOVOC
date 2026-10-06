@@ -147,7 +147,7 @@ export default function AssessmentCompleteModal({ open, studentName, onContinue 
             }}
           >
             <p style={{ margin: 0, fontSize: "13px", color: "#1967d2", fontWeight: "600", lineHeight: 1.5 }}>
-              💡 Your scores will be used to determine your placement in the available tracks. Click below to see your detailed results.
+              💡 Your course placement will be released after all students have taken the assessment. Click below to see your scores and recommendations.
             </p>
           </div>
 

@@ -162,7 +162,8 @@ function CustomSelect({
 interface Props {
   studentId: string
   studentName: string
-  rankingId?: string | null
+  schoolYear: string
+  adminName: string
   courses: Course[]
   examScoreByCourseId: Record<string, number>
   allowedCourseIds?: string[]
@@ -175,7 +176,8 @@ interface Props {
 export default function AssignCoursePanel({
   studentId,
   studentName,
-  rankingId = null,
+  schoolYear,
+  adminName,
   courses,
   examScoreByCourseId,
   allowedCourseIds,
@@ -231,7 +233,8 @@ export default function AssignCoursePanel({
     const result = await assignPlacementCourse(
       studentId,
       selectedCourseId,
-      rankingId
+      schoolYear,
+      adminName
     )
     setAssigning(false)
 
@@ -257,14 +260,14 @@ export default function AssignCoursePanel({
         Assign to course
       </p>
       <p style={{ color: "#6b7280", fontSize: "12px", margin: "0 0 12px", lineHeight: 1.45 }}>
-        Choose from this student&apos;s top 3 highest-scoring courses outside their preferred choices.
+        Choose from this student&apos;s top 3 highest-scoring courses outside their preferred choices that still have open slots. Your name and the date are recorded.
       </p>
 
       {assignableCount === 0 ? (
         <p style={{ color: "#b91c1c", fontSize: "13px", margin: 0 }}>
           {options.length === 0
-            ? "No assignable courses available."
-            : "All recommended courses are currently full."}
+            ? "No course outside this student’s preferred choices has open slots."
+            : "All courses outside this student’s preferred choices are currently full."}
         </p>
       ) : (
         <div style={{ display: "flex", flexDirection: compact ? "column" : "row", gap: "10px", alignItems: compact ? "stretch" : "flex-end", flexWrap: "wrap" }}>

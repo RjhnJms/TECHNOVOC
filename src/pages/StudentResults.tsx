@@ -6,6 +6,7 @@ import {
   QUESTIONS_PER_TRACK,
 } from "../utils/trackRanking"
 import { computeTop3Recommendations, getChoiceLabel } from "../utils/studentRecommendations"
+import { isPlacementReleased } from "../utils/placement"
 import { CourseIcon } from "../utils/courseIcons"
 import { SkeletonResultsPage } from "../components/Skeleton"
 
@@ -33,25 +34,30 @@ interface RankingResult {
   courses?: { course_name: string; capacity: number }
 }
 
+type PlacementState = "pending" | "assigned" | "waitlist"
+
 export default function StudentResults({ studentId, studentName, onLogout, onRetake }: Props) {
   const [assessments, setAssessments] = useState<AssessmentResult[]>([])
   const [rankings, setRankings] = useState<RankingResult[]>([])
   const [assignedCourse, setAssignedCourse] = useState<RankingResult | null>(null)
   const [loading, setLoading] = useState(true)
-  const [recommendationSource, setRecommendationSource] = useState<"preferred" | "fallback" | "placement_pending" | "assigned">("fallback")
+  const [placementState, setPlacementState] = useState<PlacementState>("pending")
+  const [fromPreferredCourses, setFromPreferredCourses] = useState(false)
   const [preferredCourseNames, setPreferredCourseNames] = useState<string[]>([])
 
   useEffect(() => {
     const load = async () => {
       setLoading(true)
-      const [aData, rData, pData] = await Promise.all([
+      const [aData, rData, pData, sData, cData] = await Promise.all([
         supabase.from("assessments").select("*, courses(course_name)").eq("student_id", studentId).order("score", { ascending: false }),
-        supabase.from("rankings").select("*, courses(course_name, capacity)").eq("student_id", studentId).order("rank", { ascending: true }),
+        supabase.from("rankings").select("*, courses(course_name, capacity)").eq("student_id", studentId),
         supabase
           .from("student_course_preferences")
           .select("course_id, courses(course_name)")
           .eq("student_id", studentId)
           .order("preference_order"),
+        supabase.from("students").select("school_year").eq("id", studentId).maybeSingle(),
+        supabase.from("courses").select("id, course_name, capacity"),
       ])
       const assessmentRows = aData.data || []
       setAssessments(assessmentRows)
@@ -69,42 +75,29 @@ export default function StudentResults({ studentId, studentName, onLogout, onRet
           score: a.score,
           total_items: a.total_items,
         })),
-        preferredIds
+        preferredIds,
+        studentId
       )
+      setFromPreferredCourses(computed[0]?.fromPreferredCourses ?? false)
 
-      const placementPending = (rData.data || []).some(r => r.status === "waitlist" && !r.course_id)
+      const courseById = Object.fromEntries((cData.data || []).map(c => [c.id, c]))
+      setRankings(computed.map((c, i) => ({
+        id: `computed-${i}`,
+        score: c.score,
+        rank: c.rank,
+        status: "recommended",
+        courses: courseById[c.course_id]
+          ? { course_name: courseById[c.course_id].course_name, capacity: courseById[c.course_id].capacity }
+          : undefined,
+      })))
+
+      // Final placement is only shown once the admin releases results for the school year
+      const schoolYear = sData.data?.school_year
+      const released = schoolYear ? await isPlacementReleased(schoolYear) : false
       const assigned = (rData.data || []).find(r => r.status === "included" && r.course_id)
-      setAssignedCourse(assigned ?? null)
-
-      if (placementPending) {
-        setRecommendationSource("placement_pending")
-      } else if (assigned) {
-        setRecommendationSource("assigned")
-      } else {
-        setRecommendationSource(computed[0]?.fromPreferredCourses ? "preferred" : "fallback")
-      }
-
-      const useComputed = !computed[0]?.fromPreferredCourses && !assigned
-
-      if (useComputed) {
-        if (computed.length > 0) {
-          const { data: courses } = await supabase.from("courses").select("id, course_name, capacity")
-          const courseById = Object.fromEntries((courses || []).map(c => [c.id, c]))
-          setRankings(computed.map((c, i) => ({
-            id: `computed-${i}`,
-            score: c.score,
-            rank: c.rank,
-            status: "recommended",
-            courses: courseById[c.course_id]
-              ? { course_name: courseById[c.course_id].course_name, capacity: courseById[c.course_id].capacity }
-              : undefined,
-          })))
-        } else {
-          setRankings([])
-        }
-      } else {
-        setRankings(rData.data || [])
-      }
+      const waitlisted = (rData.data || []).some(r => r.status === "waitlist")
+      setAssignedCourse(released ? assigned ?? null : null)
+      setPlacementState(!released ? "pending" : assigned ? "assigned" : waitlisted ? "waitlist" : "pending")
       setLoading(false)
     }
     load()
@@ -144,7 +137,8 @@ export default function StudentResults({ studentId, studentName, onLogout, onRet
             <Top3Courses
               top3={top3}
               assessments={assessments}
-              recommendationSource={recommendationSource}
+              placementState={placementState}
+              fromPreferredCourses={fromPreferredCourses}
               preferredCourseNames={preferredCourseNames}
               assignedCourse={assignedCourse}
             />
@@ -235,11 +229,12 @@ function ResultBanner({ totalScore, totalItems, takenAt }: {
 }
 
 function Top3Courses({
-  top3, assessments, recommendationSource, preferredCourseNames, assignedCourse,
+  top3, assessments, placementState, fromPreferredCourses, preferredCourseNames, assignedCourse,
 }: {
   top3: RankingResult[]
   assessments: AssessmentResult[]
-  recommendationSource: "preferred" | "fallback" | "placement_pending" | "assigned"
+  placementState: PlacementState
+  fromPreferredCourses: boolean
   preferredCourseNames: string[]
   assignedCourse: RankingResult | null
 }) {
@@ -247,32 +242,40 @@ function Top3Courses({
     <div style={{ backgroundColor: "white", borderRadius: "16px", padding: "24px", marginBottom: "20px", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
       <h3 style={{ fontWeight: "700", fontSize: "17px", margin: "0 0 4px" }}>Your Course Placement & Recommendation</h3>
       <p style={{ color: "#6b7280", fontSize: "13px", margin: "0 0 12px" }}>
-        {recommendationSource === "preferred"
-          ? "You passed (6+/10) on all 3 preferred courses. Your placements follow your choice order: 1st choice, 2nd choice, then 3rd."
-          : recommendationSource === "placement_pending"
-            ? "You did not pass (6+/10) on any of your 3 preferred courses. An administrator will assign you from your top-scoring non-preferred tracks."
-            : recommendationSource === "assigned"
-              ? "You have been placed in a course track."
-              : "Your top recommendations are your highest scores outside your 3 preferred choices."}
+        {fromPreferredCourses
+          ? "You passed (6+/10) on all 3 preferred courses. Your recommendations follow your choice order: 1st choice, 2nd choice, then 3rd."
+          : "Your top recommendations are your highest scores outside your 3 preferred choices."}
       </p>
 
-      {/* Assigned Placement Banner */}
-      {recommendationSource === "assigned" && assignedCourse && (
+      {/* Placement status */}
+      {placementState === "pending" && (
+        <div style={{ backgroundColor: "#fffbeb", border: "1px solid #fcd34d", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
+          <p style={{ fontWeight: "700", color: "#92400e", margin: "0 0 4px", fontSize: "14px" }}>⏳ Course placement pending</p>
+          <p style={{ color: "#92400e", fontSize: "13px", margin: 0, lineHeight: 1.5 }}>
+            Final course placements will be released after all students have taken the assessment.
+            Everyone is placed at the same time, so when you took the exam does not affect your placement.
+          </p>
+        </div>
+      )}
+      {placementState === "assigned" && assignedCourse && (
         <div style={{ backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
-          <p style={{ fontWeight: "700", color: "#15803d", margin: "0 0 4px", fontSize: "14px" }}>🎉 Course Placement Assigned</p>
+          <p style={{ fontWeight: "700", color: "#15803d", margin: "0 0 4px", fontSize: "14px" }}>🎉 Course Placement</p>
           <p style={{ color: "#374151", fontSize: "18px", fontWeight: "800", margin: "0 0 6px", display: "flex", alignItems: "center", gap: 10 }}>
             <CourseIcon courseName={assignedCourse.courses?.course_name || ""} size={20} circleSize={40} />
             {assignedCourse.courses?.course_name}
           </p>
           <p style={{ color: "#16a34a", fontSize: "13px", margin: 0, fontWeight: "600" }}>
-            You have been successfully placed in this track.
+            You have been placed in this track.
           </p>
         </div>
       )}
-      {recommendationSource === "assigned" && !assignedCourse && (
-        <p style={{ backgroundColor: "#f0fdf4", color: "#15803d", fontSize: "12px", padding: "8px 12px", borderRadius: "8px", margin: "0 0 16px", fontWeight: "600" }}>
-          🎉 You have been assigned to your course placement based on your preferred choices and/or scores!
-        </p>
+      {placementState === "waitlist" && (
+        <div style={{ backgroundColor: "#f3e8ff", border: "1px solid #c4b5fd", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
+          <p style={{ fontWeight: "700", color: "#5b21b6", margin: "0 0 8px", fontSize: "14px" }}>On placement waitlist</p>
+          <p style={{ color: "#7c3aed", fontSize: "13px", margin: 0, fontWeight: "600", lineHeight: 1.5 }}>
+            You were not placed in your preferred courses. The school will place you in one of your recommended courses below.
+          </p>
+        </div>
       )}
 
       {/* Preferred Courses & Scores - Always show for visibility */}
@@ -326,18 +329,8 @@ function Top3Courses({
         </div>
       )}
 
-      {/* Waitlist info (if applicable) */}
-      {recommendationSource === "placement_pending" && (
-        <div style={{ backgroundColor: "#f3e8ff", border: "1px solid #c4b5fd", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
-          <p style={{ fontWeight: "700", color: "#5b21b6", margin: "0 0 8px", fontSize: "14px" }}>On placement waitlist</p>
-          <p style={{ color: "#7c3aed", fontSize: "13px", margin: 0, fontWeight: "600" }}>
-            Please wait for your teacher to assign your final track.
-          </p>
-        </div>
-      )}
-
       {/* Recommended list - Hide completely if system already placed the student */}
-      {recommendationSource !== "assigned" && (
+      {placementState !== "assigned" && (
         <>
           {top3.length === 0 ? (
             <div style={{ backgroundColor: "#fef2f2", borderRadius: "12px", padding: "24px", textAlign: "center" }}>
@@ -349,7 +342,7 @@ function Top3Courses({
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-              {(recommendationSource === "placement_pending") && (
+              {!fromPreferredCourses && (
                 <p style={{ fontSize: "14px", fontWeight: "600", color: "#4b5563", margin: "4px 0 10px" }}>
                   💡 Here are your top 3 recommended courses based on your highest exam scores:
                 </p>

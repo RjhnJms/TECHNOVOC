@@ -76,12 +76,12 @@ export default function AssessmentIntro({
               "Question pool: each track has 20 questions; your exam randomly selects 10 from that pool",
               "Anti-cheating: each student gets their own random 10 per track, plus shuffled answer options",
               "Passing Score: 6 out of 10 (60%) per track — score 6–10 is Passed, below 6 is Failed",
-              "If you score 6+/10 on all 3 preferred courses, rankings use those courses (ties broken by 1st, 2nd, then 3rd choice)",
-              "If you score below 6 on any preferred course, your top 3 recommendations come from your highest scores on other courses",
+              "Placement: after all students finish, you are placed in your highest preferred choice that you passed (higher scores get priority when slots are limited)",
+              "If you do not pass any preferred course, you will be placed by the school from your top 3 recommended courses",
+              "Fairness: placement is done only after the exam period, so taking the exam earlier or later does not affect your placement",
               "Time Limit: 60 minutes — the assessment auto-submits when time runs out",
               "Skips: You may skip up to 5 questions (skipped questions count as incorrect)",
               "Question Types: Pre-skilled and Aptitude",
-              "Your 3 ranked choices (1st, 2nd, 3rd) determine tie-breakers when you qualify on preferred courses",
             ].map((item, i) => (
               <p key={i} style={{ color: "#1e40af", fontSize: "14px", margin: "0 0 6px" }}>• {item}</p>
             ))}

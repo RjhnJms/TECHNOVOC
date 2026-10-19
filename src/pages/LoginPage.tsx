@@ -2,9 +2,7 @@ import { useState } from "react"
 import { supabase } from "../supabaseClient"
 import logo from "../assets/NAVS LOGO.svg"
 import type { UserSession } from "../types/session"
-import { generateSchoolYears } from "../utils/schoolYear"
-
-const schoolYearOptions = generateSchoolYears(2023, 1).reverse()
+import { getSchoolYearFromDate } from "../utils/schoolYear"
 
 
 type StudentMode = "login" | "signup"
@@ -19,7 +17,10 @@ export default function LoginPage({ onLogin }: Props) {
   // Student fields
   const [fullName, setFullName] = useState("")
   const [studentLRN, setStudentLRN] = useState("")
-  const [schoolYear, setSchoolYear] = useState("")
+  // Students can only register for the current school year
+  const currentSchoolYear = getSchoolYearFromDate()
+  const schoolYearOptions = [currentSchoolYear]
+  const [schoolYear, setSchoolYear] = useState(currentSchoolYear)
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
@@ -127,6 +128,8 @@ export default function LoginPage({ onLogin }: Props) {
 
     if (!schoolYear) {
       newErrors.schoolYear = "Please select your school year."
+    } else if (schoolYear !== currentSchoolYear) {
+      newErrors.schoolYear = `Registration is only open for school year ${currentSchoolYear}.`
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -168,7 +171,7 @@ export default function LoginPage({ onLogin }: Props) {
 
     const registeredLRN = studentLRN.trim()
     setFullName("")
-    setSchoolYear("")
+    setSchoolYear(currentSchoolYear)
     setStudentLRN(registeredLRN)
     setStudentMode("login")
     setShowSignupSuccess(true)

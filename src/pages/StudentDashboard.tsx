@@ -129,6 +129,17 @@ export default function StudentDashboard({ studentId, studentName, onLogout }: P
     const checkTakenAndLoad = async () => {
       setLoading(true)
       try {
+        const { data: studentRow, error: studentError } = await supabase
+          .from("students")
+          .select("id")
+          .eq("id", studentId)
+          .maybeSingle()
+        if (!studentError && !studentRow) {
+          alert(STUDENT_RECORD_MISSING_MESSAGE)
+          onLogout()
+          return
+        }
+
         const { data: takenData } = await supabase
           .from("assessments")
           .select("*")
@@ -184,6 +195,7 @@ export default function StudentDashboard({ studentId, studentName, onLogout }: P
       }
     }
     checkTakenAndLoad()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [studentId])
 
   // Restore full question text from DB when resuming a slim localStorage session
@@ -388,7 +400,6 @@ export default function StudentDashboard({ studentId, studentName, onLogout }: P
       clearTimeout(saveSessionTimerRef.current)
       saveSessionTimerRef.current = null
     }
-    localStorage.removeItem(`assessment_state_${studentId}`)
 
     try {
       const courseMap = buildCourseMap(questions, answers)
@@ -404,18 +415,26 @@ export default function StudentDashboard({ studentId, studentName, onLogout }: P
 
       const { error: assessmentError } = await supabase.from("assessments").insert(assessmentRows)
       if (assessmentError) {
+        if (assessmentError.code === FOREIGN_KEY_VIOLATION) {
+          throw new StudentRecordMissingError()
+        }
         throw new Error(assessmentError.message)
       }
 
+      localStorage.removeItem(`assessment_state_${studentId}`)
       // Placement is not decided here; the admin runs it for everyone after the exam period.
       setAlreadyTaken(true)
       setShowCompleteModal(true)
     } catch (err) {
       console.error("Assessment submit failed:", err)
-      const message = err instanceof Error ? err.message : "Unknown error"
-      alert(
-        `Could not submit your assessment: ${message}\n\nPlease check your connection and try again.`
-      )
+      if (err instanceof StudentRecordMissingError) {
+        alert(STUDENT_RECORD_MISSING_MESSAGE)
+      } else {
+        const message = err instanceof Error ? err.message : "Unknown error"
+        alert(
+          `Could not submit your assessment: ${message}\n\nPlease check your connection and try again.`
+        )
+      }
       submittingRef.current = false
       skipSessionSaveRef.current = false
     } finally {
@@ -579,6 +598,15 @@ export default function StudentDashboard({ studentId, studentName, onLogout }: P
 }
 
 // ── Helper functions (outside component = lower complexity) ──
+
+/** Postgres error code for a foreign key violation. */
+const FOREIGN_KEY_VIOLATION = "23503"
+
+const STUDENT_RECORD_MISSING_MESSAGE =
+  "Your student record could not be found. It may have been removed by an administrator.\n\n" +
+  "Please ask your teacher or the school admin for help before signing up again."
+
+class StudentRecordMissingError extends Error {}
 
 type StoredExamQuestion = Pick<
   Question,

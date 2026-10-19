@@ -7,7 +7,7 @@ import SettingsTab from "./SettingsTab"
 import ReportsTab from "./ReportsTab"
 import StudentDetailModal from "./StudentDetailModal"
 import { BarChart3, BookOpen, Trophy, Settings, FileText } from "lucide-react"
-import { generateSchoolYears } from "../utils/schoolYear"
+import { generateSchoolYears, getSchoolYearFromDate } from "../utils/schoolYear"
 
 
 interface Props {
@@ -45,7 +45,9 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("overview")
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
   const [schoolYears, setSchoolYears] = useState<string[]>([])
-  const [schoolYearFilter, setSchoolYearFilter] = useState<string>("all")
+  // Every tab starts on the current school year; the header picker can switch to another year or all years
+  const currentSchoolYear = getSchoolYearFromDate()
+  const [schoolYearFilter, setSchoolYearFilter] = useState<string>(currentSchoolYear)
 
   useEffect(() => {
     fetchAllData()
@@ -104,9 +106,26 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
           >
             <option value="all">All School Years</option>
             {schoolYears.map(sy => (
-              <option key={sy} value={sy}>{sy}</option>
+              <option key={sy} value={sy}>{sy === currentSchoolYear ? `${sy} (Current)` : sy}</option>
             ))}
           </select>
+          {schoolYearFilter !== currentSchoolYear && (
+            <button
+              type="button"
+              onClick={() => setSchoolYearFilter(currentSchoolYear)}
+              style={{
+                padding: "8px 14px",
+                borderRadius: "8px",
+                border: "1px solid #bfdbfe",
+                cursor: "pointer",
+                backgroundColor: "#eff6ff",
+                color: "#1d4ed8",
+                fontWeight: "600",
+              }}
+            >
+              Current year
+            </button>
+          )}
           <button
             onClick={onLogout}
             style={{
@@ -149,7 +168,7 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
         {activeTab === "courses" && <CoursesTab />}
         {activeTab === "results" && <ResultsTab schoolYearFilter={schoolYearFilter} adminName={adminName} />}
         {activeTab === "reports" && <ReportsTab schoolYearFilter={schoolYearFilter} />}
-        {activeTab === "settings" && <SettingsTab />}
+        {activeTab === "settings" && <SettingsTab schoolYearFilter={schoolYearFilter} />}
       </div>
 
       {selectedStudent && (

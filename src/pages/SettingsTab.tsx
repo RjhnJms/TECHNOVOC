@@ -12,8 +12,13 @@ import {
 } from "../utils/examAccessCode"
 import { KeyRound, Loader2, RefreshCw, ShieldCheck, Copy, Check, Users } from "lucide-react"
 import ConfirmDialog from "../components/ConfirmDialog"
+import { getStartYear } from "../utils/schoolYear"
 
-export default function SettingsTab() {
+interface Props {
+  schoolYearFilter: string
+}
+
+export default function SettingsTab({ schoolYearFilter }: Props) {
   const [requireLabCode, setRequireLabCode] = useState(false)
   const [settingsLoading, setSettingsLoading] = useState(true)
   const [savingSetting, setSavingSetting] = useState(false)
@@ -114,8 +119,11 @@ export default function SettingsTab() {
     0
   )
 
-  const activeInLab = codeUsage.filter(u => u.status === "active")
-  const filteredUsage = codeUsage.filter(u => usageFilter === "all" || u.status === usageFilter)
+  const yearUsage = schoolYearFilter === "all"
+    ? codeUsage
+    : codeUsage.filter(u => getStartYear(u.school_year) === getStartYear(schoolYearFilter))
+  const activeInLab = yearUsage.filter(u => u.status === "active")
+  const filteredUsage = yearUsage.filter(u => usageFilter === "all" || u.status === usageFilter)
 
   return (
     <div>
@@ -307,7 +315,8 @@ export default function SettingsTab() {
             </p>
             {!codesLoading && (
               <p style={{ color: "#1d4ed8", fontSize: "13px", margin: "8px 0 0", fontWeight: "600" }}>
-                {activeInLab.length} currently in lab · {codeUsage.length} total redemption(s)
+                {activeInLab.length} currently in lab · {yearUsage.length} total redemption(s)
+                {schoolYearFilter !== "all" && ` · ${schoolYearFilter}`}
               </p>
             )}
           </div>

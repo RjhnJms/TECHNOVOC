@@ -28,6 +28,9 @@ interface PlacementInfo {
   style: React.CSSProperties
 }
 
+const formatTakenAt = (iso: string) =>
+  new Date(iso).toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" })
+
 interface Props {
   schoolYearFilter: string
   adminName: string
@@ -45,6 +48,7 @@ export default function ResultsTab({ schoolYearFilter, adminName }: Props) {
   const [confirmDialog, setConfirmDialog] = useState<{ type: "delete" | "export"; student?: Student } | null>(null)
   const [placementStatuses, setPlacementStatuses] = useState<Record<string, PlacementInfo>>({})
   const [studentCourses, setStudentCourses] = useState<Record<string, { preferred: string[]; recommended: string[] }>>({})
+  const [takenAtByStudent, setTakenAtByStudent] = useState<Record<string, string>>({})
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -58,7 +62,7 @@ export default function ResultsTab({ schoolYearFilter, adminName }: Props) {
         .select("student_id, course_id, status, courses(course_name)"),
       supabase
         .from("assessments")
-        .select("student_id, course_id, score, total_items"),
+        .select("student_id, course_id, score, total_items, taken_at"),
       supabase
         .from("courses")
         .select("id, course_name")
@@ -79,7 +83,12 @@ export default function ResultsTab({ schoolYearFilter, adminName }: Props) {
     }
 
     const scoresByStudent = new Map<string, { course_id: string; score: number; total_items: number }[]>()
+    const takenAtMap: Record<string, string> = {}
     for (const a of assessmentData || []) {
+      // Keep the latest taken_at per student
+      if (a.taken_at && (!takenAtMap[a.student_id] || a.taken_at > takenAtMap[a.student_id])) {
+        takenAtMap[a.student_id] = a.taken_at
+      }
       const list = scoresByStudent.get(a.student_id) || []
       list.push({ course_id: a.course_id, score: a.score, total_items: a.total_items })
       scoresByStudent.set(a.student_id, list)
@@ -168,6 +177,7 @@ export default function ResultsTab({ schoolYearFilter, adminName }: Props) {
     setCourses(courseData || [])
     setPlacementStatuses(statusMap)
     setStudentCourses(courseMapInfo)
+    setTakenAtByStudent(takenAtMap)
     setLoading(false)
   }, [])
 
@@ -191,13 +201,14 @@ export default function ResultsTab({ schoolYearFilter, adminName }: Props) {
   const exportStudentsCSV = () => {
     const exportRows = filteredStudents
     const csv = [
-      "Full Name,LRN,Preferred,Recommended,Enrolled Course",
+      "Full Name,LRN,Date Taken,Preferred,Recommended,Enrolled Course",
       ...exportRows.map(
         s => {
           const pref = (studentCourses[s.id]?.preferred || []).join(" / ")
           const rec = (studentCourses[s.id]?.recommended || []).join(" / ")
           const enrolled = placementStatuses[s.id]?.label || ""
-          return `"${s.full_name}","${s.lrn}","${pref}","${rec}","${enrolled}"`
+          const takenAt = takenAtByStudent[s.id] ? formatTakenAt(takenAtByStudent[s.id]) : ""
+          return `"${s.full_name}","${s.lrn}","${takenAt}","${pref}","${rec}","${enrolled}"`
         }
       ),
     ].join("\n")
@@ -355,13 +366,13 @@ export default function ResultsTab({ schoolYearFilter, adminName }: Props) {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
             <thead>
               <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
-                {["Full Name", "LRN", "Preferred", "Recommended", "Enrolled Course", "Actions"].map(h => (
+                {["Full Name", "LRN", "Date Taken", "Preferred", "Recommended", "Enrolled Course", "Actions"].map(h => (
                   <th key={h} style={{ textAlign: "left", padding: "10px 12px", color: "#6b7280", fontWeight: "600" }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              <SkeletonTableRows columns={6} rows={8} />
+              <SkeletonTableRows columns={7} rows={8} />
             </tbody>
           </table>
         ) : filteredStudents.length === 0 ? (
@@ -370,7 +381,7 @@ export default function ResultsTab({ schoolYearFilter, adminName }: Props) {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
             <thead>
               <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
-                {["Full Name", "LRN", "Preferred", "Recommended", "Enrolled Course", "Actions"].map(h => (
+                {["Full Name", "LRN", "Date Taken", "Preferred", "Recommended", "Enrolled Course", "Actions"].map(h => (
                   <th
                     key={h}
                     style={{ textAlign: "left", padding: "10px 12px", color: "#6b7280", fontWeight: "600" }}
@@ -391,6 +402,13 @@ export default function ResultsTab({ schoolYearFilter, adminName }: Props) {
                 >
                   <td style={{ padding: "10px 12px", fontWeight: "500" }}>{s.full_name}</td>
                   <td style={{ padding: "10px 12px" }}>{s.lrn}</td>
+                  <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>
+                    {takenAtByStudent[s.id] ? (
+                      formatTakenAt(takenAtByStudent[s.id])
+                    ) : (
+                      <span style={{ color: "#9ca3af", fontSize: "12px" }}>—</span>
+                    )}
+                  </td>
                   <td style={{ padding: "10px 12px" }}>
                     {studentCourses[s.id]?.preferred.length ? (
                       <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>

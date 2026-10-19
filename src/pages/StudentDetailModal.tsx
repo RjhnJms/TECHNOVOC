@@ -347,39 +347,7 @@ export default function StudentDetailModal({ student, adminName = "Admin", onClo
                 )}
 
                 {placement?.status === "waitlist" && (
-                  <div style={{ marginBottom: "16px" }}>
-                    <div style={{ backgroundColor: "#faf5ff", border: "1px solid #e9d5ff", borderRadius: "12px", padding: "14px 16px", marginBottom: "16px" }}>
-                      <p style={{ fontWeight: "700", color: "#5b21b6", margin: "0 0 4px" }}>Waitlist — needs manual placement</p>
-                      <p style={{ color: "#6b7280", fontSize: "13px", margin: 0, lineHeight: 1.5 }}>
-                        This student did not pass (6+/10) any preferred course, or the courses they passed are full.
-                        Place them in one of their top 3 highest-scoring courses outside their preferred choices that still have slots.
-                      </p>
-                    </div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "16px" }}>
-                      {manualOptionIds.map((courseId, idx) => {
-                        const course = courses.find(c => c.id === courseId)
-                        const courseName = course?.course_name ?? "Unknown"
-                        const score = assessments.find(a => a.course_id === courseId)?.score ?? 0
-                        const slotsLeft = Math.max(0, (course?.capacity ?? 0) - (enrolledCountByCourse[courseId] ?? 0))
-                        return (
-                          <div
-                            key={courseId}
-                            style={{ backgroundColor: "#f0fdf4", border: "1px solid #86efac", borderRadius: "10px", padding: "8px 14px", minWidth: "140px" }}
-                          >
-                            <p style={{ margin: "0 0 2px", fontWeight: "700", fontSize: "13px", display: "flex", alignItems: "center", gap: 6 }}>
-                              <CourseIcon courseName={courseName} size={12} circleSize={22} />
-                              #{idx + 1} {courseName}
-                            </p>
-                            <p style={{ margin: "0 0 2px", fontSize: "12px", color: "#2563eb", fontWeight: "700" }}>
-                              Score: {score}/{QUESTIONS_PER_TRACK}
-                            </p>
-                            <p style={{ margin: 0, fontSize: "11px", color: "#16a34a", fontWeight: "600" }}>
-                              {slotsLeft} slot{slotsLeft === 1 ? "" : "s"} available
-                            </p>
-                          </div>
-                        )
-                      })}
-                    </div>
+                  <div style={{ marginBottom: "20px" }}>
                     <AssignCoursePanel
                       studentId={student.id}
                       studentName={student.full_name}

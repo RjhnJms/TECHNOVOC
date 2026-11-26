@@ -1,15 +1,16 @@
 import { useState, useEffect, useMemo } from "react"
 import { supabase } from "../supabaseClient"
-import { ArrowLeft, Award, Download, FileText, GraduationCap, RefreshCw, Search, Users, X, ChevronDown } from "lucide-react"
+import { ArrowLeft, Award, Download, FileText, GraduationCap, RefreshCw, Search, SlidersHorizontal, Users, X, ChevronDown } from "lucide-react"
 import { CourseIcon } from "../utils/courseIcons"
 import { SkeletonTableRows } from "../components/Skeleton"
 import { getStartYear } from "../utils/schoolYear"
 import { fetchAllRows } from "../utils/placement"
-import { STUDENT_SECTIONS, STUDENT_TYPES, getStudentTypeBadgeStyle } from "../utils/studentProfile"
+import { STUDENT_SECTIONS, STUDENT_TYPES, fetchSections, getStudentTypeBadgeStyle, type SectionRow } from "../utils/studentProfile"
 import { isPassingScore, QUESTIONS_PER_TRACK } from "../utils/trackRanking"
 
 
 import ConfirmDialog from "../components/ConfirmDialog"
+import ManageSectionsModal from "../components/ManageSectionsModal"
 
 interface Course {
   id: string
@@ -81,6 +82,11 @@ export default function ReportsTab({ schoolYearFilter }: Props) {
   const [selectedCourse, setSelectedCourse] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
   const [sectionsPageOpen, setSectionsPageOpen] = useState(false)
+  const [showManageSections, setShowManageSections] = useState(false)
+  const [sectionsList, setSectionsList] = useState<SectionRow[]>(() =>
+    STUDENT_SECTIONS.map(name => ({ id: name, name, isFallback: true }))
+  )
+  const [sectionsUsingFallback, setSectionsUsingFallback] = useState(false)
   const [sectionGroupFilter, setSectionGroupFilter] = useState("all")
   const [sectionTrackFilter, setSectionTrackFilter] = useState("all")
   const [sectionSearch, setSectionSearch] = useState("")
@@ -91,7 +97,7 @@ export default function ReportsTab({ schoolYearFilter }: Props) {
 
   const fetchData = async () => {
     setLoading(true)
-    const [{ data: courseData }, { data: rankData }, studentsResult, assessmentsResult] = await Promise.all([
+    const [{ data: courseData }, { data: rankData }, studentsResult, assessmentsResult, sectionsResult] = await Promise.all([
       supabase.from("courses").select("id, course_name, capacity").order("course_name"),
       supabase
         .from("rankings")
@@ -100,12 +106,15 @@ export default function ReportsTab({ schoolYearFilter }: Props) {
         .order("rank", { ascending: true }),
       fetchAllRows<ReportStudent>("students", "id, full_name, lrn, school_year, student_type, section"),
       fetchAllRows<ReportAssessment>("assessments", "student_id, course_id, score, total_items, passed"),
+      fetchSections(),
     ])
 
     setCourses(courseData || [])
     setIncluded((rankData || []) as unknown as IncludedRanking[])
     setStudents(studentsResult.data || [])
     setAssessments(assessmentsResult.data || [])
+    setSectionsList(sectionsResult.sections)
+    setSectionsUsingFallback(sectionsResult.usingFallback)
 
     setLoading(false)
   }
@@ -201,9 +210,25 @@ export default function ReportsTab({ schoolYearFilter }: Props) {
     return byStudent
   }, [assessments, courses])
 
+  const availableSectionNames = useMemo(() => {
+    const names = new Set(sectionsList.map(s => s.name))
+    for (const s of filteredYearStudents) {
+      if (s.section) names.add(s.section)
+    }
+    return [...names].sort((a, b) => a.localeCompare(b))
+  }, [sectionsList, filteredYearStudents])
+
+  const allStudentCountBySection = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const s of students) {
+      if (s.section) counts[s.section] = (counts[s.section] || 0) + 1
+    }
+    return counts
+  }, [students])
+
   const sectionGroupCounts = useMemo(() => {
     const counts: Record<string, number> = { all: filteredYearStudents.length }
-    for (const sec of STUDENT_SECTIONS) counts[sec] = 0
+    for (const sec of availableSectionNames) counts[sec] = 0
     for (const type of STUDENT_TYPES) {
       if (type !== "Regular") counts[type] = 0
     }
@@ -214,7 +239,7 @@ export default function ReportsTab({ schoolYearFilter }: Props) {
       }
     }
     return counts
-  }, [filteredYearStudents])
+  }, [availableSectionNames, filteredYearStudents])
 
   const sectionBaseStudents = useMemo(() => {
     return filteredYearStudents.filter(s => {
@@ -479,6 +504,10 @@ export default function ReportsTab({ schoolYearFilter }: Props) {
             </p>
           </div>
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+            <button type="button" onClick={() => setShowManageSections(true)} disabled={busy} style={btnOutline}>
+              <SlidersHorizontal size={16} />
+              Manage Sections
+            </button>
             <button type="button" onClick={() => void fetchData()} disabled={busy} style={btnOutline}>
               <RefreshCw size={16} />
               Reload
@@ -505,7 +534,7 @@ export default function ReportsTab({ schoolYearFilter }: Props) {
             >
               <option value="all">All Sections & Types ({sectionGroupCounts.all ?? 0})</option>
               <optgroup label="Sections">
-                {STUDENT_SECTIONS.map(sec => (
+                {availableSectionNames.map(sec => (
                   <option key={sec} value={sec}>{sec} ({sectionGroupCounts[sec] ?? 0})</option>
                 ))}
               </optgroup>
@@ -742,6 +771,17 @@ export default function ReportsTab({ schoolYearFilter }: Props) {
             </div>
           )}
         </div>
+
+        <ManageSectionsModal
+          open={showManageSections}
+          sections={sectionsList}
+          usingFallback={sectionsUsingFallback}
+          studentCountBySection={allStudentCountBySection}
+          onClose={() => setShowManageSections(false)}
+          onChanged={async () => {
+            await fetchData()
+          }}
+        />
 
         {confirmDialogEl}
       </div>

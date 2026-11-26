@@ -1,9 +1,9 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { supabase } from "../supabaseClient"
 import logo from "../assets/NAVS LOGO.svg"
 import type { UserSession } from "../types/session"
 import { getSchoolYearFromDate } from "../utils/schoolYear"
-import { STUDENT_SECTIONS, STUDENT_TYPES, type StudentType } from "../utils/studentProfile"
+import { STUDENT_SECTIONS, STUDENT_TYPES, fetchSections, type StudentType } from "../utils/studentProfile"
 
 
 type StudentMode = "login" | "signup"
@@ -24,6 +24,17 @@ export default function LoginPage({ onLogin }: Props) {
   const [schoolYear, setSchoolYear] = useState(currentSchoolYear)
   const [studentType, setStudentType] = useState<StudentType | "">("Regular")
   const [section, setSection] = useState("")
+  const [sectionOptions, setSectionOptions] = useState<string[]>(() => [...STUDENT_SECTIONS])
+
+  useEffect(() => {
+    let active = true
+    void fetchSections().then(({ sections }) => {
+      if (active) setSectionOptions(sections.map(s => s.name))
+    })
+    return () => {
+      active = false
+    }
+  }, [])
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
@@ -161,7 +172,7 @@ export default function LoginPage({ onLogin }: Props) {
     }
 
     if (studentType === "Regular") {
-      if (!section || !(STUDENT_SECTIONS as readonly string[]).includes(section)) {
+      if (!section || !sectionOptions.includes(section)) {
         newErrors.section = "Please select your section."
       }
     }
@@ -433,7 +444,7 @@ export default function LoginPage({ onLogin }: Props) {
                   }}
                 >
                   <option value="">Select your section</option>
-                  {STUDENT_SECTIONS.map((sec) => (
+                  {sectionOptions.map((sec) => (
                     <option key={sec} value={sec}>
                       {sec}
                     </option>

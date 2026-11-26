@@ -9,6 +9,7 @@ import { getStartYear } from "../utils/schoolYear"
 import {
   STUDENT_SECTIONS,
   STUDENT_TYPES,
+  fetchSections,
   getStudentTypeBadgeStyle,
 } from "../utils/studentProfile"
 
@@ -51,6 +52,7 @@ export default function ResultsTab({ schoolYearFilter, adminName }: Props) {
   const [courseFilter, setCourseFilter] = useState("all")
   const [studentTypeFilter, setStudentTypeFilter] = useState("all")
   const [sectionFilter, setSectionFilter] = useState("all")
+  const [sectionOptions, setSectionOptions] = useState<string[]>(() => [...STUDENT_SECTIONS])
   const [sortBy, setSortBy] = useState("newest")
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -61,7 +63,7 @@ export default function ResultsTab({ schoolYearFilter, adminName }: Props) {
 
   const fetchData = useCallback(async () => {
     setLoading(true)
-    const [{ data: studentData }, { data: rankData }, { data: assessmentData }, { data: courseData }, { data: prefData }] = await Promise.all([
+    const [{ data: studentData }, { data: rankData }, { data: assessmentData }, { data: courseData }, { data: prefData }, sectionResult] = await Promise.all([
       supabase
         .from("students")
         .select("id, full_name, lrn, school_year, student_type, section, created_at")
@@ -80,7 +82,14 @@ export default function ResultsTab({ schoolYearFilter, adminName }: Props) {
         .from("student_course_preferences")
         .select("student_id, course_id, preference_order")
         .order("preference_order"),
+      fetchSections(),
     ])
+
+    const dynamicNames = sectionResult.sections.map(s => s.name)
+    const legacyNames = (studentData || [])
+      .map(s => s.section)
+      .filter((sec): sec is string => !!sec && !dynamicNames.includes(sec))
+    setSectionOptions([...new Set([...dynamicNames, ...legacyNames])].sort((a, b) => a.localeCompare(b)))
 
     const courseMap = new Map((courseData || []).map(c => [c.id, c.course_name]))
     
@@ -370,7 +379,7 @@ export default function ResultsTab({ schoolYearFilter, adminName }: Props) {
             style={{ ...inputStyle, flex: "0 1 170px" }}
           >
             <option value="all">All sections</option>
-            {STUDENT_SECTIONS.map(sec => (
+            {sectionOptions.map(sec => (
               <option key={sec} value={sec}>{sec}</option>
             ))}
             <option value="none">No section</option>

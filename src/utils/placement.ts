@@ -121,7 +121,7 @@ const PAGE_SIZE = 1000
  * Supabase returns at most 1000 rows per request, so placement data (11 assessment rows per
  * student) is read page by page to make sure no student's scores are left out.
  */
-async function fetchAllRows<T>(
+export async function fetchAllRows<T>(
   table: string,
   columns: string
 ): Promise<{ data: T[]; error: string | null }> {

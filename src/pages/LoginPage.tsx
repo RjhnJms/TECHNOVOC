@@ -1,8 +1,9 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { supabase } from "../supabaseClient"
 import logo from "../assets/NAVS LOGO.svg"
 import type { UserSession } from "../types/session"
 import { getSchoolYearFromDate } from "../utils/schoolYear"
+import { STUDENT_SECTIONS, STUDENT_TYPES, fetchSections, type StudentType } from "../utils/studentProfile"
 
 
 type StudentMode = "login" | "signup"
@@ -21,6 +22,19 @@ export default function LoginPage({ onLogin }: Props) {
   const currentSchoolYear = getSchoolYearFromDate()
   const schoolYearOptions = [currentSchoolYear]
   const [schoolYear, setSchoolYear] = useState(currentSchoolYear)
+  const [studentType, setStudentType] = useState<StudentType | "">("Regular")
+  const [section, setSection] = useState("")
+  const [sectionOptions, setSectionOptions] = useState<string[]>(() => [...STUDENT_SECTIONS])
+
+  useEffect(() => {
+    let active = true
+    void fetchSections().then(({ sections }) => {
+      if (active) setSectionOptions(sections.map(s => s.name))
+    })
+    return () => {
+      active = false
+    }
+  }, [])
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
@@ -28,6 +42,8 @@ export default function LoginPage({ onLogin }: Props) {
     fullName?: string
     studentLRN?: string
     schoolYear?: string
+    studentType?: string
+    section?: string
   }>({})
   const [showSignupSuccess, setShowSignupSuccess] = useState(false)
 
@@ -65,6 +81,25 @@ export default function LoginPage({ onLogin }: Props) {
     setSchoolYear(val)
     if (errors.schoolYear) {
       setErrors(prev => ({ ...prev, schoolYear: undefined }))
+    }
+  }
+
+  const handleStudentTypeChange = (val: string) => {
+    setStudentType(val as StudentType | "")
+    if (val !== "Regular") {
+      setSection("")
+    }
+    setErrors(prev => ({
+      ...prev,
+      studentType: undefined,
+      section: val !== "Regular" ? undefined : prev.section,
+    }))
+  }
+
+  const handleSectionChange = (val: string) => {
+    setSection(val)
+    if (errors.section) {
+      setErrors(prev => ({ ...prev, section: undefined }))
     }
   }
 
@@ -132,6 +167,16 @@ export default function LoginPage({ onLogin }: Props) {
       newErrors.schoolYear = `Registration is only open for school year ${currentSchoolYear}.`
     }
 
+    if (!studentType || !STUDENT_TYPES.includes(studentType as StudentType)) {
+      newErrors.studentType = "Please select your student type."
+    }
+
+    if (studentType === "Regular") {
+      if (!section || !sectionOptions.includes(section)) {
+        newErrors.section = "Please select your section."
+      }
+    }
+
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors)
       return
@@ -157,6 +202,8 @@ export default function LoginPage({ onLogin }: Props) {
         full_name: fullName.trim(),
         lrn: studentLRN.trim(),
         school_year: schoolYear,
+        student_type: studentType,
+        section: studentType === "Regular" ? section : null,
         phone_number: "",
       }])
       .select("id, full_name")
@@ -172,6 +219,8 @@ export default function LoginPage({ onLogin }: Props) {
     const registeredLRN = studentLRN.trim()
     setFullName("")
     setSchoolYear(currentSchoolYear)
+    setStudentType("Regular")
+    setSection("")
     setStudentLRN(registeredLRN)
     setStudentMode("login")
     setShowSignupSuccess(true)
@@ -353,6 +402,61 @@ export default function LoginPage({ onLogin }: Props) {
                 </p>
               )}
             </div>
+            <div>
+              <label style={{ fontWeight: "600", fontSize: "14px" }}>Student Type</label>
+              <select
+                value={studentType}
+                onChange={(e) => handleStudentTypeChange(e.target.value)}
+                style={{
+                  ...inputStyle,
+                  borderColor: errors.studentType ? "#dc2626" : "#e5e7eb",
+                  backgroundColor: errors.studentType ? "#fef2f2" : "#f9fafb",
+                }}
+              >
+                <option value="">Select student type</option>
+                {STUDENT_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+              {errors.studentType && (
+                <p style={{ color: "#dc2626", fontSize: "12px", marginTop: "4px", fontWeight: "500" }}>
+                  {errors.studentType}
+                </p>
+              )}
+              {(studentType === "Transferee" || studentType === "Balik Skwela") && (
+                <p style={{ fontSize: "12px", color: "#6b7280", marginTop: "4px", marginBottom: 0 }}>
+                  Section is not required for {studentType} students.
+                </p>
+              )}
+            </div>
+            {studentType === "Regular" && (
+              <div>
+                <label style={{ fontWeight: "600", fontSize: "14px" }}>Section</label>
+                <select
+                  value={section}
+                  onChange={(e) => handleSectionChange(e.target.value)}
+                  style={{
+                    ...inputStyle,
+                    borderColor: errors.section ? "#dc2626" : "#e5e7eb",
+                    backgroundColor: errors.section ? "#fef2f2" : "#f9fafb",
+                  }}
+                >
+                  <option value="">Select your section</option>
+                  {sectionOptions.map((sec) => (
+                    <option key={sec} value={sec}>
+                      {sec}
+                    </option>
+                  ))}
+                </select>
+                {errors.section && (
+                  <p style={{ color: "#dc2626", fontSize: "12px", marginTop: "4px", fontWeight: "500" }}>
+                    {errors.section}
+                  </p>
+                )}
+              </div>
+            )}
             <button
               onClick={handleStudentSignup}
               disabled={loading}
@@ -418,7 +522,7 @@ const containerStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  padding: "0 16px",
+  padding: "24px 16px",
 }
 
 const cardStyle: React.CSSProperties = {

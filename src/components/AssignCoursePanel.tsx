@@ -1,162 +1,13 @@
 import { useState } from "react"
+import { AlertCircle, UserCheck } from "lucide-react"
 import { assignPlacementCourse } from "../utils/studentRecommendations"
+import { isPassingScore, QUESTIONS_PER_TRACK } from "../utils/trackRanking"
+import { CourseIcon } from "../utils/courseIcons"
 import ConfirmDialog from "./ConfirmDialog"
-import { ChevronDown } from "lucide-react"
 
 interface Course {
   id: string
   course_name: string
-}
-
-interface CustomSelectOption {
-  value: string
-  label: string
-  score: number
-  slotsLeft: number
-  disabled?: boolean
-}
-
-function CustomSelect({
-  value,
-  onChange,
-  options,
-  placeholder,
-  hasError,
-}: {
-  value: string
-  onChange: (val: string) => void
-  options: CustomSelectOption[]
-  placeholder: string
-  hasError?: boolean
-}) {
-  const [isOpen, setIsOpen] = useState(false)
-  const [isFocused, setIsFocused] = useState(false)
-  const selectedOption = options.find(o => o.value === value)
-
-  return (
-    <div
-      onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-          setIsOpen(false)
-        }
-      }}
-      style={{ position: "relative", width: "100%" }}
-    >
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        onFocus={() => setIsFocused(true)}
-        onBlur={() => setIsFocused(false)}
-        style={{
-          width: "100%",
-          padding: "10px 12px",
-          borderRadius: "8px",
-          border: hasError
-            ? "1px solid #f87171"
-            : (isOpen || isFocused)
-            ? "1px solid #a78bfa"
-            : "1px solid #c4b5fd",
-          backgroundColor: "white",
-          color: "#374151",
-          fontSize: "14px",
-          textAlign: "left",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          cursor: "pointer",
-          outline: "none",
-          fontWeight: "500",
-          boxShadow: "0 1px 2px rgba(0,0,0,0.02)",
-        }}
-      >
-        <span style={{ textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
-          {selectedOption
-            ? `${selectedOption.label} (Score: ${selectedOption.score}/10, ${
-                selectedOption.disabled ? "Full" : `${selectedOption.slotsLeft} slots`
-              })`
-            : placeholder}
-        </span>
-        <ChevronDown
-          size={16}
-          style={{
-            transform: isOpen ? "rotate(180deg)" : "rotate(0deg)",
-            transition: "transform 0.2s ease",
-            color: "#a78bfa",
-            flexShrink: 0,
-            marginLeft: "8px",
-          }}
-        />
-      </button>
-
-      {isOpen && (
-        <div
-          style={{
-            position: "absolute",
-            top: "calc(100% + 6px)",
-            left: 0,
-            right: 0,
-            backgroundColor: "white",
-            borderRadius: "8px",
-            border: "1px solid #e9d5ff",
-            boxShadow: "0 10px 25px -5px rgba(124, 58, 237, 0.08), 0 8px 10px -6px rgba(124, 58, 237, 0.08)",
-            zIndex: 1000,
-            maxHeight: "260px",
-            overflowY: "auto",
-            padding: "4px",
-          }}
-        >
-          {options.map((opt) => {
-            const isSelected = opt.value === value
-            const isDisabled = opt.disabled
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                disabled={isDisabled}
-                onClick={() => {
-                  onChange(opt.value)
-                  setIsOpen(false)
-                }}
-                style={{
-                  width: "100%",
-                  padding: "9px 12px",
-                  border: "none",
-                  borderRadius: "6px",
-                  backgroundColor: isSelected ? "#f3e8ff" : "transparent",
-                  color: isDisabled ? "#d1d5db" : isSelected ? "#6b21a8" : "#4b5563",
-                  fontSize: "14px",
-                  fontWeight: isSelected ? "600" : "400",
-                  textAlign: "left",
-                  cursor: isDisabled ? "not-allowed" : "pointer",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  transition: "background-color 0.1s ease",
-                }}
-                onMouseEnter={(e) => {
-                  if (!isSelected && !isDisabled) {
-                    e.currentTarget.style.backgroundColor = "#faf5ff"
-                    e.currentTarget.style.color = "#6b21a8"
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!isSelected && !isDisabled) {
-                    e.currentTarget.style.backgroundColor = "transparent"
-                    e.currentTarget.style.color = "#4b5563"
-                  }
-                }}
-              >
-                <span style={{ fontWeight: "600" }}>{opt.label}</span>
-                <span style={{ fontSize: "12px", color: isDisabled ? "#d1d5db" : "#7c3aed", fontWeight: "500", marginLeft: "8px" }}>
-                  Score: {opt.score}/10 · {isDisabled ? "Full" : `${opt.slotsLeft} slots`}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
 }
 
 interface Props {
@@ -170,9 +21,12 @@ interface Props {
   enrolledCountById?: Record<string, number>
   capacityById?: Record<string, number>
   onAssigned?: () => void
-  compact?: boolean
 }
 
+/**
+ * Manual placement for a waitlisted student. The candidate courses are listed as choices
+ * (ranked by score) so the admin compares and selects in one place, then confirms.
+ */
 export default function AssignCoursePanel({
   studentId,
   studentName,
@@ -184,58 +38,30 @@ export default function AssignCoursePanel({
   enrolledCountById,
   capacityById,
   onAssigned,
-  compact = false,
 }: Props) {
   const [selectedCourseId, setSelectedCourseId] = useState("")
   const [assigning, setAssigning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showAssignConfirm, setShowAssignConfirm] = useState(false)
 
-  const buildOption = (c: Course) => {
-    const score = examScoreByCourseId[c.id] ?? 0
-    const enrolled = enrolledCountById?.[c.id] ?? 0
-    const capacity = capacityById?.[c.id] ?? 9999
-    const slotsLeft = Math.max(0, capacity - enrolled)
-    const isFull = slotsLeft === 0
-
-    return {
-      value: c.id,
-      label: c.course_name,
-      score,
-      slotsLeft,
-      disabled: isFull,
-    }
-  }
-
-  const options = allowedCourseIds
-    ? allowedCourseIds
-        .map(id => courses.find(c => c.id === id))
-        .filter((c): c is Course => !!c)
-        .map(buildOption)
+  const candidates = (allowedCourseIds
+    ? allowedCourseIds.map(id => courses.find(c => c.id === id)).filter((c): c is Course => !!c)
     : courses
-        .map(buildOption)
+  ).map(c => {
+    const score = examScoreByCourseId[c.id] ?? 0
+    const capacity = capacityById?.[c.id] ?? 9999
+    const slotsLeft = Math.max(0, capacity - (enrolledCountById?.[c.id] ?? 0))
+    return { ...c, score, slotsLeft, isFull: slotsLeft === 0 }
+  })
 
-  const assignableCount = options.filter(o => !o.disabled).length
-
-  const handleAssignClick = () => {
-    if (!selectedCourseId) {
-      setError("Please select a course first.")
-      return
-    }
-    setShowAssignConfirm(true)
-  }
+  const selected = candidates.find(c => c.id === selectedCourseId)
+  const assignableCount = candidates.filter(c => !c.isFull).length
 
   const handleAssignConfirm = async () => {
     setShowAssignConfirm(false)
-
     setAssigning(true)
     setError(null)
-    const result = await assignPlacementCourse(
-      studentId,
-      selectedCourseId,
-      schoolYear,
-      adminName
-    )
+    const result = await assignPlacementCourse(studentId, selectedCourseId, schoolYear, adminName)
     setAssigning(false)
 
     if (result.error) {
@@ -248,78 +74,140 @@ export default function AssignCoursePanel({
   }
 
   return (
-    <div
+    <section
+      aria-labelledby="manual-placement-title"
       style={{
         backgroundColor: "#faf5ff",
-        border: "1px solid #c4b5fd",
-        borderRadius: "12px",
-        padding: compact ? "14px" : "18px",
+        border: "1px solid #e9d5ff",
+        borderRadius: "14px",
+        padding: "18px",
       }}
     >
-      <p style={{ fontWeight: "700", color: "#5b21b6", margin: "0 0 4px", fontSize: compact ? "14px" : "15px" }}>
-        Assign to course
-      </p>
-      <p style={{ color: "#6b7280", fontSize: "12px", margin: "0 0 12px", lineHeight: 1.45 }}>
-        Choose from this student&apos;s top 3 highest-scoring courses outside their preferred choices that still have open slots. Your name and the date are recorded.
+      <h3 id="manual-placement-title" style={{ fontSize: "16px", fontWeight: 800, color: "#4c1d95", margin: "0 0 4px" }}>
+        Needs manual placement
+      </h3>
+      <p style={{ color: "#6b4f8f", fontSize: "13px", margin: "0 0 16px", lineHeight: 1.5, maxWidth: "60ch" }}>
+        {studentName} didn&apos;t pass any preferred course, or the courses they passed are full.
+        Choose one of their highest-scoring other courses that still has open slots.
       </p>
 
       {assignableCount === 0 ? (
-        <p style={{ color: "#b91c1c", fontSize: "13px", margin: 0 }}>
-          {options.length === 0
-            ? "No course outside this student’s preferred choices has open slots."
-            : "All courses outside this student’s preferred choices are currently full."}
-        </p>
+        <div
+          role="status"
+          style={{
+            display: "flex",
+            gap: "10px",
+            alignItems: "flex-start",
+            backgroundColor: "white",
+            border: "1px solid #fecaca",
+            borderRadius: "10px",
+            padding: "12px 14px",
+            color: "#991b1b",
+            fontSize: "13px",
+            lineHeight: 1.5,
+          }}
+        >
+          <AlertCircle size={18} style={{ flexShrink: 0, marginTop: "1px" }} />
+          <span>
+            {candidates.length === 0
+              ? "No course outside this student's preferred choices has open slots. Increase a course's capacity in Course Management to place them."
+              : "All courses outside this student's preferred choices are full. Increase a course's capacity in Course Management to place them."}
+          </span>
+        </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: compact ? "column" : "row", gap: "10px", alignItems: compact ? "stretch" : "flex-end", flexWrap: "wrap" }}>
-          <div style={{ flex: 1, minWidth: "200px" }}>
-            <label style={{ display: "block", fontSize: "12px", fontWeight: "600", color: "#6b7280", marginBottom: "6px" }}>
-              Course
-            </label>
-            <CustomSelect
-              value={selectedCourseId}
-              onChange={val => {
-                setSelectedCourseId(val)
-                setError(null)
-              }}
-              options={options}
-              placeholder="— Select a course —"
-              hasError={!!error}
-            />
+        <>
+          <div role="radiogroup" aria-labelledby="manual-placement-title" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            {candidates.map((c, idx) => {
+              const isSelected = c.id === selectedCourseId
+              const passed = isPassingScore(c.score, QUESTIONS_PER_TRACK)
+              return (
+                <label
+                  key={c.id}
+                  className="placement-option"
+                  data-selected={isSelected || undefined}
+                  data-disabled={c.isFull || undefined}
+                >
+                  <input
+                    type="radio"
+                    name={`placement-${studentId}`}
+                    value={c.id}
+                    aria-label={`${c.course_name}, score ${c.score} out of ${QUESTIONS_PER_TRACK}, ${c.isFull ? "no slots left" : `${c.slotsLeft} slots open`}`}
+                    checked={isSelected}
+                    disabled={c.isFull || assigning}
+                    onChange={() => {
+                      setSelectedCourseId(c.id)
+                      setError(null)
+                    }}
+                    className="placement-option-input"
+                  />
+                  <span className="placement-option-radio" aria-hidden="true" />
+                  <span style={{ fontSize: "12px", fontWeight: 700, color: "#7c3aed", width: "22px", flexShrink: 0 }}>
+                    #{idx + 1}
+                  </span>
+                  <CourseIcon courseName={c.course_name} size={15} circleSize={32} />
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: "block", fontWeight: 700, fontSize: "15px", color: "#111827" }}>
+                      {c.course_name}
+                    </span>
+                    <span style={{ display: "block", fontSize: "12px", color: c.isFull ? "#9ca3af" : "#15803d", fontWeight: 600, marginTop: "1px" }}>
+                      {c.isFull ? "No slots left" :`${c.slotsLeft} slot${c.slotsLeft === 1 ? "" : "s"} open`}
+                    </span>
+                  </span>
+                  <span style={{ textAlign: "right", flexShrink: 0 }}>
+                    <span style={{ display: "block", fontWeight: 800, fontSize: "17px", color: "#111827", fontVariantNumeric: "tabular-nums" }}>
+                      {c.score}<span style={{ fontSize: "13px", fontWeight: 600, color: "#6b7280" }}>/{QUESTIONS_PER_TRACK}</span>
+                    </span>
+                    <span style={{ display: "block", fontSize: "11px", fontWeight: 700, color: passed ? "#15803d" : "#b91c1c" }}>
+                      {passed ? "Passed" : "Failed"}
+                    </span>
+                  </span>
+                </label>
+              )
+            })}
           </div>
-          <button
-            type="button"
-            onClick={handleAssignClick}
-            disabled={assigning || !selectedCourseId}
+
+          <div
             style={{
-              padding: "10px 20px",
-              backgroundColor: "#7c3aed",
-              color: "white",
-              border: "none",
-              borderRadius: "8px",
-              cursor: assigning || !selectedCourseId ? "not-allowed" : "pointer",
-              fontWeight: "600",
-              fontSize: "14px",
-              opacity: assigning || !selectedCourseId ? 0.6 : 1,
-              whiteSpace: "nowrap",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "12px",
+              flexWrap: "wrap",
+              marginTop: "16px",
             }}
           >
-            {assigning ? "Assigning..." : "Assign student"}
-          </button>
-        </div>
+            <p style={{ color: "#6b4f8f", fontSize: "12px", margin: 0, flex: "1 1 220px", lineHeight: 1.45 }}>
+              Your name ({adminName}) and today&apos;s date are saved with this placement.
+            </p>
+            <button
+              type="button"
+              className="placement-assign-btn"
+              onClick={() => setShowAssignConfirm(true)}
+              disabled={assigning || !selected}
+            >
+              <UserCheck size={16} />
+              {assigning ? "Placing…" : selected ? `Place in ${selected.course_name}` : "Choose a course"}
+            </button>
+          </div>
+        </>
       )}
 
       {error && (
-        <p style={{ color: "#b91c1c", fontSize: "13px", margin: "10px 0 0" }}>{error}</p>
+        <p role="alert" style={{ display: "flex", gap: "6px", alignItems: "center", color: "#b91c1c", fontSize: "13px", fontWeight: 600, margin: "12px 0 0" }}>
+          <AlertCircle size={15} style={{ flexShrink: 0 }} />
+          {error}
+        </p>
       )}
+
       <ConfirmDialog
         open={showAssignConfirm}
-        title="Assign Student"
-        message={`Are you sure you want to assign ${studentName} to ${courses.find(c => c.id === selectedCourseId)?.course_name ?? "this course"}?`}
-        confirmLabel="Assign"
+        title="Place student"
+        message={`Place ${studentName} in ${selected?.course_name ?? "this course"} for ${schoolYear}? This uses one of the course's open slots.`}
+        confirmLabel="Place student"
         variant="assign"
         onConfirm={handleAssignConfirm}
         onCancel={() => setShowAssignConfirm(false)}
       />
-    </div>
+    </section>
   )
 }

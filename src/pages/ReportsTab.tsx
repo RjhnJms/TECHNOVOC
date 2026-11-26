@@ -1,12 +1,16 @@
 import { useState, useEffect, useMemo } from "react"
 import { supabase } from "../supabaseClient"
-import { Download, FileText, RefreshCw, Search, Users, X, ChevronDown } from "lucide-react"
+import { ArrowLeft, Award, Download, FileText, GraduationCap, RefreshCw, Search, SlidersHorizontal, Users, X, ChevronDown } from "lucide-react"
 import { CourseIcon } from "../utils/courseIcons"
 import { SkeletonTableRows } from "../components/Skeleton"
 import { getStartYear } from "../utils/schoolYear"
+import { fetchAllRows } from "../utils/placement"
+import { STUDENT_SECTIONS, STUDENT_TYPES, fetchSections, getStudentTypeBadgeStyle, type SectionRow } from "../utils/studentProfile"
+import { isPassingScore, QUESTIONS_PER_TRACK } from "../utils/trackRanking"
 
 
 import ConfirmDialog from "../components/ConfirmDialog"
+import ManageSectionsModal from "../components/ManageSectionsModal"
 
 interface Course {
   id: string
@@ -29,8 +33,27 @@ interface IncludedRanking {
     full_name: string
     lrn: string
     school_year: string
+    student_type?: string | null
+    section?: string | null
   } | null
   courses?: { course_name: string } | null
+}
+
+interface ReportStudent {
+  id: string
+  full_name: string
+  lrn: string
+  school_year: string
+  student_type?: string | null
+  section?: string | null
+}
+
+interface ReportAssessment {
+  student_id: string
+  course_id: string
+  score: number
+  total_items: number
+  passed: boolean
 }
 
 function escapeCsv(value: string): string {
@@ -54,26 +77,44 @@ interface Props {
 export default function ReportsTab({ schoolYearFilter }: Props) {
   const [courses, setCourses] = useState<Course[]>([])
   const [included, setIncluded] = useState<IncludedRanking[]>([])
+  const [students, setStudents] = useState<ReportStudent[]>([])
+  const [assessments, setAssessments] = useState<ReportAssessment[]>([])
   const [selectedCourse, setSelectedCourse] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
+  const [sectionsPageOpen, setSectionsPageOpen] = useState(false)
+  const [showManageSections, setShowManageSections] = useState(false)
+  const [sectionsList, setSectionsList] = useState<SectionRow[]>(() =>
+    STUDENT_SECTIONS.map(name => ({ id: name, name, isFallback: true }))
+  )
+  const [sectionsUsingFallback, setSectionsUsingFallback] = useState(false)
+  const [sectionGroupFilter, setSectionGroupFilter] = useState("all")
+  const [sectionTrackFilter, setSectionTrackFilter] = useState("all")
+  const [sectionSearch, setSectionSearch] = useState("")
   const [loading, setLoading] = useState(true)
-  const [confirmDialog, setConfirmDialog] = useState<"track" | "all" | null>(null)
+  const [confirmDialog, setConfirmDialog] = useState<"track" | "all" | "section" | null>(null)
   const [exportTrackId, setExportTrackId] = useState("")
   const [showExportDropdown, setShowExportDropdown] = useState(false)
 
   const fetchData = async () => {
     setLoading(true)
-    const [{ data: courseData }, { data: rankData }] = await Promise.all([
+    const [{ data: courseData }, { data: rankData }, studentsResult, assessmentsResult, sectionsResult] = await Promise.all([
       supabase.from("courses").select("id, course_name, capacity").order("course_name"),
       supabase
         .from("rankings")
-        .select("id, student_id, course_id, score, rank, students(full_name, lrn, school_year), courses(course_name)")
+        .select("id, student_id, course_id, score, rank, students(full_name, lrn, school_year, student_type, section), courses(course_name)")
         .eq("status", "included")
         .order("rank", { ascending: true }),
+      fetchAllRows<ReportStudent>("students", "id, full_name, lrn, school_year, student_type, section"),
+      fetchAllRows<ReportAssessment>("assessments", "student_id, course_id, score, total_items, passed"),
+      fetchSections(),
     ])
 
     setCourses(courseData || [])
     setIncluded((rankData || []) as unknown as IncludedRanking[])
+    setStudents(studentsResult.data || [])
+    setAssessments(assessmentsResult.data || [])
+    setSectionsList(sectionsResult.sections)
+    setSectionsUsingFallback(sectionsResult.usingFallback)
 
     setLoading(false)
   }
@@ -109,6 +150,178 @@ export default function ReportsTab({ schoolYearFilter }: Props) {
   const totalCapacity = courseSummaries.reduce((sum, course) => sum + course.capacity, 0)
   const totalEnrolled = courseSummaries.reduce((sum, course) => sum + course.enrolled, 0)
   const totalAvailable = courseSummaries.reduce((sum, course) => sum + course.available, 0)
+
+  const filteredYearStudents = useMemo(() => {
+    if (schoolYearFilter === "all") return students
+    const filterYearStart = getStartYear(schoolYearFilter)
+    return students.filter(s => s.school_year && getStartYear(s.school_year) === filterYearStart)
+  }, [students, schoolYearFilter])
+
+  const enrolledCourseByStudent = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const r of filteredIncluded) {
+      if (!r.student_id || map.has(r.student_id)) continue
+      const cName = r.courses?.course_name || courses.find(c => c.id === r.course_id)?.course_name || ""
+      if (cName) map.set(r.student_id, cName)
+    }
+    return map
+  }, [filteredIncluded, courses])
+
+  const assessmentLookupByStudent = useMemo(() => {
+    const courseNameById = new Map(courses.map(c => [c.id, c.course_name]))
+    const byStudent = new Map<string, {
+      byCourse: Record<string, ReportAssessment>
+      totalScore: number
+      totalItems: number
+      bestCourseNames: string[]
+      bestScore: number
+      bestTotal: number
+      assessed: boolean
+    }>()
+
+    for (const a of assessments) {
+      let entry = byStudent.get(a.student_id)
+      if (!entry) {
+        entry = {
+          byCourse: {},
+          totalScore: 0,
+          totalItems: 0,
+          bestCourseNames: [],
+          bestScore: -1,
+          bestTotal: QUESTIONS_PER_TRACK,
+          assessed: false,
+        }
+        byStudent.set(a.student_id, entry)
+      }
+      entry.byCourse[a.course_id] = a
+      entry.totalScore += a.score
+      entry.totalItems += a.total_items || QUESTIONS_PER_TRACK
+      entry.assessed = true
+      const cName = courseNameById.get(a.course_id) || ""
+      if (a.score > entry.bestScore) {
+        entry.bestScore = a.score
+        entry.bestTotal = a.total_items || QUESTIONS_PER_TRACK
+        entry.bestCourseNames = cName ? [cName] : []
+      } else if (a.score === entry.bestScore && cName && !entry.bestCourseNames.includes(cName)) {
+        entry.bestCourseNames.push(cName)
+        entry.bestCourseNames.sort((x, y) => x.localeCompare(y))
+      }
+    }
+    return byStudent
+  }, [assessments, courses])
+
+  const availableSectionNames = useMemo(() => {
+    const names = new Set(sectionsList.map(s => s.name))
+    for (const s of filteredYearStudents) {
+      if (s.section) names.add(s.section)
+    }
+    return [...names].sort((a, b) => a.localeCompare(b))
+  }, [sectionsList, filteredYearStudents])
+
+  const allStudentCountBySection = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const s of students) {
+      if (s.section) counts[s.section] = (counts[s.section] || 0) + 1
+    }
+    return counts
+  }, [students])
+
+  const sectionGroupCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: filteredYearStudents.length }
+    for (const sec of availableSectionNames) counts[sec] = 0
+    for (const type of STUDENT_TYPES) {
+      if (type !== "Regular") counts[type] = 0
+    }
+    for (const s of filteredYearStudents) {
+      if (s.section && s.section in counts) counts[s.section] += 1
+      if (s.student_type && s.student_type !== "Regular" && s.student_type in counts) {
+        counts[s.student_type] += 1
+      }
+    }
+    return counts
+  }, [availableSectionNames, filteredYearStudents])
+
+  const sectionBaseStudents = useMemo(() => {
+    return filteredYearStudents.filter(s => {
+      if (sectionGroupFilter === "all") return true
+      if (sectionGroupFilter === "Transferee" || sectionGroupFilter === "Balik Skwela") {
+        return s.student_type === sectionGroupFilter
+      }
+      return s.section === sectionGroupFilter
+    })
+  }, [filteredYearStudents, sectionGroupFilter])
+
+  const topScorersByTrack = useMemo(() => {
+    return courses.map(course => {
+      let highestScore: number | null = null
+      let totalItems = QUESTIONS_PER_TRACK
+      let topStudents: ReportStudent[] = []
+      let assessedCount = 0
+
+      for (const student of sectionBaseStudents) {
+        const record = assessmentLookupByStudent.get(student.id)?.byCourse[course.id]
+        if (!record) continue
+        assessedCount += 1
+        if (highestScore === null || record.score > highestScore) {
+          highestScore = record.score
+          totalItems = record.total_items || QUESTIONS_PER_TRACK
+          topStudents = [student]
+        } else if (record.score === highestScore) {
+          topStudents.push(student)
+        }
+      }
+
+      topStudents.sort((a, b) => a.full_name.localeCompare(b.full_name))
+
+      return {
+        courseId: course.id,
+        courseName: course.course_name,
+        highestScore,
+        totalItems,
+        topStudents,
+        assessedCount,
+      }
+    })
+  }, [courses, sectionBaseStudents, assessmentLookupByStudent])
+
+  const selectedTrackTop = useMemo(
+    () => (sectionTrackFilter === "all" ? null : topScorersByTrack.find(t => t.courseId === sectionTrackFilter) ?? null),
+    [sectionTrackFilter, topScorersByTrack]
+  )
+
+  const sectionTableRows = useMemo(() => {
+    const q = sectionSearch.trim().toLowerCase()
+    const matching = sectionBaseStudents.filter(s => {
+      if (!q) return true
+      return (
+        s.full_name.toLowerCase().includes(q) ||
+        s.lrn.includes(sectionSearch.trim()) ||
+        (s.section || "").toLowerCase().includes(q)
+      )
+    })
+
+    return [...matching].sort((a, b) => {
+      const infoA = assessmentLookupByStudent.get(a.id)
+      const infoB = assessmentLookupByStudent.get(b.id)
+
+      if (sectionTrackFilter !== "all") {
+        const recA = infoA?.byCourse[sectionTrackFilter]
+        const recB = infoB?.byCourse[sectionTrackFilter]
+        if (recA && !recB) return -1
+        if (!recA && recB) return 1
+        if (recA && recB && recB.score !== recA.score) return recB.score - recA.score
+      } else {
+        const hasA = !!infoA?.assessed
+        const hasB = !!infoB?.assessed
+        if (hasA && !hasB) return -1
+        if (!hasA && hasB) return 1
+        if (infoA && infoB && infoB.totalScore !== infoA.totalScore) {
+          return infoB.totalScore - infoA.totalScore
+        }
+      }
+      return a.full_name.localeCompare(b.full_name)
+    })
+  }, [sectionBaseStudents, sectionSearch, sectionTrackFilter, assessmentLookupByStudent])
 
   const selected = courseSummaries.find(c => c.id === selectedCourse)
   const courseRoster = useMemo(
@@ -183,6 +396,52 @@ export default function ReportsTab({ schoolYearFilter }: Props) {
     downloadCsv("final-rosters-all-tracks.csv", buildRowsForRankings(sorted))
   }
 
+  const exportSectionReport = () => {
+    const selectedTrack = courses.find(c => c.id === sectionTrackFilter)
+    const groupSlug = sectionGroupFilter === "all" ? "all-sections" : sectionGroupFilter.toLowerCase().replace(/\s+/g, "-")
+    const trackSlug = selectedTrack ? selectedTrack.course_name.toLowerCase().replace(/\s+/g, "-") : "all-tracks"
+
+    if (selectedTrack) {
+      const header = ["Student Name", "LRN", "Student Type", "Section", `${selectedTrack.course_name} Score`, "Track Status", "Enrolled Course"]
+      const rows = sectionTableRows.map(s => {
+        const rec = assessmentLookupByStudent.get(s.id)?.byCourse[selectedTrack.id]
+        const total = rec?.total_items || QUESTIONS_PER_TRACK
+        const scoreLabel = rec ? `${rec.score} / ${total}` : "Not taken"
+        const statusLabel = rec ? (isPassingScore(rec.score, total) ? "Passed" : "Failed") : "Not taken"
+        return [
+          s.full_name,
+          s.lrn,
+          s.student_type || "—",
+          s.section || "—",
+          scoreLabel,
+          statusLabel,
+          enrolledCourseByStudent.get(s.id) || "—",
+        ]
+      })
+      downloadCsv(`section-report-${groupSlug}-${trackSlug}.csv`, [header, ...rows])
+      return
+    }
+
+    const header = ["Student Name", "LRN", "Student Type", "Section", "Highest Track", "Total Score", "Enrolled Course"]
+    const rows = sectionTableRows.map(s => {
+      const info = assessmentLookupByStudent.get(s.id)
+      const bestLabel = info?.assessed && info.bestCourseNames.length > 0
+        ? `${info.bestCourseNames.join(", ")} (${info.bestScore} / ${info.bestTotal})`
+        : "Not taken"
+      const totalLabel = info?.assessed ? `${info.totalScore} / ${info.totalItems}` : "Not taken"
+      return [
+        s.full_name,
+        s.lrn,
+        s.student_type || "—",
+        s.section || "—",
+        bestLabel,
+        totalLabel,
+        enrolledCourseByStudent.get(s.id) || "—",
+      ]
+    })
+    downloadCsv(`section-report-${groupSlug}-${trackSlug}.csv`, [header, ...rows])
+  }
+
   const exportTrackName = courses.find(c => c.id === exportTrackId)?.course_name
   const exportTrackEnrolled = filteredIncluded.filter(r => r.course_id === exportTrackId).length
 
@@ -192,6 +451,342 @@ export default function ReportsTab({ schoolYearFilter }: Props) {
   }
 
   const busy = loading
+
+  const confirmDialogEl = (
+    <ConfirmDialog
+      open={confirmDialog !== null}
+      title="Export Report"
+      message={confirmDialog === "all"
+        ? "Are you sure you want to export the final rosters for all tracks to a CSV file?"
+        : confirmDialog === "section"
+          ? `Are you sure you want to export ${sectionTableRows.length} student record${sectionTableRows.length === 1 ? "" : "s"} for ${sectionGroupFilter === "all" ? "All Sections & Types" : sectionGroupFilter} to a CSV file?`
+          : `Are you sure you want to export the final roster for "${exportTrackName}" (${exportTrackEnrolled} student${exportTrackEnrolled !== 1 ? "s" : ""}) to a CSV file?`
+      }
+      confirmLabel="Export"
+      variant="export"
+      onConfirm={() => {
+        if (confirmDialog === "all") {
+          exportAllTracks()
+        } else if (confirmDialog === "section") {
+          exportSectionReport()
+        } else if (confirmDialog === "track" && exportTrackId) {
+          exportSpecificTrack(exportTrackId)
+        }
+        setConfirmDialog(null)
+        setExportTrackId("")
+      }}
+      onCancel={() => {
+        setConfirmDialog(null)
+        setExportTrackId("")
+      }}
+    />
+  )
+
+  if (sectionsPageOpen) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px" }}>
+          <div>
+            <button
+              type="button"
+              onClick={() => setSectionsPageOpen(false)}
+              style={{ ...btnOutline, padding: "7px 12px", fontSize: "13px", marginBottom: "12px" }}
+            >
+              <ArrowLeft size={15} />
+              Back to Reports
+            </button>
+            <h2 style={{ fontWeight: "700", fontSize: "22px", margin: "0 0 4px", display: "flex", alignItems: "center", gap: 8 }}>
+              <GraduationCap size={22} />
+              Students by Section
+            </h2>
+            <p style={{ color: "#6b7280", margin: 0 }}>
+              View students from each section (or Transferee / Balik Skwela) and check who got the highest score on a course.
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+            <button type="button" onClick={() => setShowManageSections(true)} disabled={busy} style={btnOutline}>
+              <SlidersHorizontal size={16} />
+              Manage Sections
+            </button>
+            <button type="button" onClick={() => void fetchData()} disabled={busy} style={btnOutline}>
+              <RefreshCw size={16} />
+              Reload
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmDialog("section")}
+              disabled={busy || sectionTableRows.length === 0}
+              style={btnDark}
+            >
+              <Download size={16} />
+              Export CSV
+            </button>
+          </div>
+        </div>
+
+        <div style={card}>
+          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+            <select
+              value={sectionGroupFilter}
+              onChange={e => setSectionGroupFilter(e.target.value)}
+              style={{ ...selectStyle, flex: "1 1 220px" }}
+              aria-label="Filter by section or student type"
+            >
+              <option value="all">All Sections & Types ({sectionGroupCounts.all ?? 0})</option>
+              <optgroup label="Sections">
+                {availableSectionNames.map(sec => (
+                  <option key={sec} value={sec}>{sec} ({sectionGroupCounts[sec] ?? 0})</option>
+                ))}
+              </optgroup>
+              <optgroup label="Other Student Types">
+                {STUDENT_TYPES.filter(t => t !== "Regular").map(type => (
+                  <option key={type} value={type}>{type} ({sectionGroupCounts[type] ?? 0})</option>
+                ))}
+              </optgroup>
+            </select>
+
+            <select
+              value={sectionTrackFilter}
+              onChange={e => setSectionTrackFilter(e.target.value)}
+              style={{ ...selectStyle, flex: "1 1 220px" }}
+              aria-label="Filter by track or course"
+            >
+              <option value="all">All tracks (best track per student)</option>
+              {courses.map(course => (
+                <option key={course.id} value={course.id}>{course.course_name}</option>
+              ))}
+            </select>
+
+            <div style={{ position: "relative", flex: "1 1 240px" }}>
+              <Search size={16} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "#9ca3af" }} />
+              <input
+                placeholder="Search by name or LRN..."
+                value={sectionSearch}
+                onChange={e => setSectionSearch(e.target.value)}
+                style={{ ...selectStyle, cursor: "text", paddingLeft: "36px" }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {!loading && sectionTrackFilter !== "all" && selectedTrackTop && (
+          <div
+            style={{
+              backgroundColor: selectedTrackTop.highestScore !== null && selectedTrackTop.highestScore > 0 ? "#fefce8" : "#f9fafb",
+              border: `1px solid ${selectedTrackTop.highestScore !== null && selectedTrackTop.highestScore > 0 ? "#fde047" : "#e5e7eb"}`,
+              borderRadius: "12px",
+              padding: "16px 20px",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "12px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <Award size={20} color={selectedTrackTop.highestScore !== null && selectedTrackTop.highestScore > 0 ? "#ca8a04" : "#9ca3af"} />
+              <div>
+                <p style={{ margin: "0 0 2px", fontSize: "12px", fontWeight: "700", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.4px" }}>
+                  Highest Score in {selectedTrackTop.courseName} — {sectionGroupFilter === "all" ? "All Sections" : sectionGroupFilter}
+                </p>
+                {selectedTrackTop.assessedCount === 0 || selectedTrackTop.highestScore === null ? (
+                  <p style={{ margin: 0, fontSize: "14px", color: "#6b7280" }}>
+                    No assessment scores recorded yet for this selection.
+                  </p>
+                ) : (
+                  <p style={{ margin: 0, fontSize: "15px", fontWeight: "700", color: "#111827" }}>
+                    {selectedTrackTop.topStudents.map(st =>
+                      sectionGroupFilter === "all"
+                        ? `${st.full_name} (${st.section || st.student_type || "—"})`
+                        : st.full_name
+                    ).join(", ")}
+                  </p>
+                )}
+              </div>
+            </div>
+            {selectedTrackTop.highestScore !== null && (
+              <span
+                style={{
+                  backgroundColor: selectedTrackTop.highestScore > 0 ? "#fef08a" : "#e5e7eb",
+                  color: selectedTrackTop.highestScore > 0 ? "#854d0e" : "#374151",
+                  padding: "6px 14px",
+                  borderRadius: "999px",
+                  fontSize: "13px",
+                  fontWeight: "800",
+                }}
+              >
+                {selectedTrackTop.highestScore} / {selectedTrackTop.totalItems}
+              </span>
+            )}
+          </div>
+        )}
+
+        <div style={card}>
+          <p style={{ color: "#6b7280", fontSize: "13px", margin: "0 0 12px" }}>
+            Showing {sectionTableRows.length} of {sectionBaseStudents.length} student{sectionBaseStudents.length === 1 ? "" : "s"}
+            {sectionGroupFilter !== "all" ? ` in ${sectionGroupFilter}` : ""}
+          </p>
+
+          {loading ? (
+            <div className="table-responsive" style={{ marginBottom: 0 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px", minWidth: "700px" }}>
+                <thead>
+                  <tr style={{ borderBottom: "2px solid #e5e7eb", backgroundColor: "#f9fafb" }}>
+                    {["Student Name", "LRN", "Student Type", "Section", "Track Score", "Status", "Enrolled Course"].map(h => (
+                      <th key={h} style={{ ...thStyle, whiteSpace: "nowrap" }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  <SkeletonTableRows columns={7} rows={6} />
+                </tbody>
+              </table>
+            </div>
+          ) : sectionTableRows.length === 0 ? (
+            <p style={{ textAlign: "center", color: "#9ca3af", padding: "36px 0", margin: 0 }}>
+              No students found for this section filter.
+            </p>
+          ) : (
+            <div className="table-responsive" style={{ marginBottom: 0 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px", minWidth: "720px" }}>
+                <thead>
+                  <tr style={{ borderBottom: "2px solid #e5e7eb", backgroundColor: "#f9fafb" }}>
+                    {(sectionTrackFilter === "all"
+                      ? ["Student Name", "LRN", "Student Type", "Section", "Highest Track", "Total Score", "Enrolled Course"]
+                      : ["Student Name", "LRN", "Student Type", "Section", `${courses.find(c => c.id === sectionTrackFilter)?.course_name || "Track"} Score`, "Status", "Enrolled Course"]
+                    ).map(h => (
+                      <th key={h} style={{ ...thStyle, whiteSpace: "nowrap" }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sectionTableRows.map((s, i) => {
+                    const info = assessmentLookupByStudent.get(s.id)
+                    const trackRec = sectionTrackFilter !== "all" ? info?.byCourse[sectionTrackFilter] : undefined
+                    const isTopForSelectedTrack =
+                      sectionTrackFilter !== "all" &&
+                      !!trackRec &&
+                      selectedTrackTop?.highestScore !== null &&
+                      selectedTrackTop?.highestScore !== undefined &&
+                      selectedTrackTop.highestScore > 0 &&
+                      trackRec.score === selectedTrackTop.highestScore
+                    const enrolledCourse = enrolledCourseByStudent.get(s.id)
+
+                    return (
+                      <tr
+                        key={s.id}
+                        style={{
+                          borderBottom: "1px solid #f3f4f6",
+                          backgroundColor: isTopForSelectedTrack ? "#fefce8" : i % 2 === 0 ? "white" : "#f9fafb",
+                        }}
+                      >
+                        <td style={{ ...tdStyle, fontWeight: "600" }}>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                            {s.full_name}
+                            {isTopForSelectedTrack && (
+                              <span
+                                style={{
+                                  fontSize: "11px",
+                                  fontWeight: "700",
+                                  padding: "2px 8px",
+                                  borderRadius: "999px",
+                                  backgroundColor: "#fef08a",
+                                  color: "#854d0e",
+                                }}
+                              >
+                                Top Scorer
+                              </span>
+                            )}
+                          </span>
+                        </td>
+                        <td style={tdStyle}>{s.lrn}</td>
+                        <td style={{ ...tdStyle, whiteSpace: "nowrap" }}>
+                          {s.student_type ? (
+                            <span
+                              style={{
+                                padding: "4px 10px",
+                                borderRadius: "12px",
+                                fontSize: "12px",
+                                ...getStudentTypeBadgeStyle(s.student_type),
+                              }}
+                            >
+                              {s.student_type}
+                            </span>
+                          ) : (
+                            <span style={{ color: "#9ca3af", fontSize: "12px" }}>—</span>
+                          )}
+                        </td>
+                        <td style={{ ...tdStyle, whiteSpace: "nowrap" }}>{s.section || "—"}</td>
+                        {sectionTrackFilter === "all" ? (
+                          <>
+                            <td style={tdStyle}>
+                              {info?.assessed && info.bestCourseNames.length > 0 ? (
+                                <span>
+                                  <strong>{info.bestCourseNames.join(", ")}</strong>{" "}
+                                  <span style={{ color: "#2563eb", fontWeight: "700" }}>
+                                    ({info.bestScore} / {info.bestTotal})
+                                  </span>
+                                </span>
+                              ) : (
+                                <span style={{ color: "#9ca3af", fontSize: "12px" }}>Not taken</span>
+                              )}
+                            </td>
+                            <td style={{ ...tdStyle, whiteSpace: "nowrap", fontWeight: "600" }}>
+                              {info?.assessed ? `${info.totalScore} / ${info.totalItems}` : "—"}
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td style={{ ...tdStyle, whiteSpace: "nowrap", fontWeight: "700", color: trackRec ? "#111827" : "#9ca3af" }}>
+                              {trackRec ? `${trackRec.score} / ${trackRec.total_items || QUESTIONS_PER_TRACK}` : "Not taken"}
+                            </td>
+                            <td style={tdStyle}>
+                              {trackRec ? (
+                                <span
+                                  style={{
+                                    padding: "4px 10px",
+                                    borderRadius: "999px",
+                                    fontSize: "12px",
+                                    fontWeight: "700",
+                                    backgroundColor: isPassingScore(trackRec.score, trackRec.total_items || QUESTIONS_PER_TRACK) ? "#f0fdf4" : "#fef2f2",
+                                    color: isPassingScore(trackRec.score, trackRec.total_items || QUESTIONS_PER_TRACK) ? "#15803d" : "#dc2626",
+                                  }}
+                                >
+                                  {isPassingScore(trackRec.score, trackRec.total_items || QUESTIONS_PER_TRACK) ? "Passed" : "Failed"}
+                                </span>
+                              ) : (
+                                <span style={{ color: "#9ca3af", fontSize: "12px" }}>—</span>
+                              )}
+                            </td>
+                          </>
+                        )}
+                        <td style={{ ...tdStyle, fontWeight: enrolledCourse ? "600" : "400", color: enrolledCourse ? "#16a34a" : "#9ca3af" }}>
+                          {enrolledCourse || "—"}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <ManageSectionsModal
+          open={showManageSections}
+          sections={sectionsList}
+          usingFallback={sectionsUsingFallback}
+          studentCountBySection={allStudentCountBySection}
+          onClose={() => setShowManageSections(false)}
+          onChanged={async () => {
+            await fetchData()
+          }}
+        />
+
+        {confirmDialogEl}
+      </div>
+    )
+  }
 
   return (
     <div>
@@ -209,6 +804,10 @@ export default function ReportsTab({ schoolYearFilter }: Props) {
           <button type="button" onClick={() => void fetchData()} disabled={busy} style={btnOutline}>
             <RefreshCw size={16} />
             Reload
+          </button>
+          <button type="button" onClick={() => setSectionsPageOpen(true)} disabled={busy} style={btnOutline}>
+            <GraduationCap size={16} />
+            Sections
           </button>
 
           {/* Export specific track dropdown */}
@@ -522,29 +1121,7 @@ export default function ReportsTab({ schoolYearFilter }: Props) {
         </p>
       </div>
 
-      <ConfirmDialog
-        open={confirmDialog !== null}
-        title="Export Report"
-        message={confirmDialog === "all"
-          ? "Are you sure you want to export the final rosters for all tracks to a CSV file?"
-          : `Are you sure you want to export the final roster for "${exportTrackName}" (${exportTrackEnrolled} student${exportTrackEnrolled !== 1 ? "s" : ""}) to a CSV file?`
-        }
-        confirmLabel="Export"
-        variant="export"
-        onConfirm={() => {
-          if (confirmDialog === "all") {
-            exportAllTracks()
-          } else if (confirmDialog === "track" && exportTrackId) {
-            exportSpecificTrack(exportTrackId)
-          }
-          setConfirmDialog(null)
-          setExportTrackId("")
-        }}
-        onCancel={() => {
-          setConfirmDialog(null)
-          setExportTrackId("")
-        }}
-      />
+      {confirmDialogEl}
 
       <style>{`
         @keyframes dropdownIn {

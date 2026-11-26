@@ -6,6 +6,11 @@ import PlacementPanel from "../components/PlacementPanel"
 import ConfirmDialog from "../components/ConfirmDialog"
 import { SkeletonTableRows } from "../components/Skeleton"
 import { getStartYear } from "../utils/schoolYear"
+import {
+  STUDENT_SECTIONS,
+  STUDENT_TYPES,
+  getStudentTypeBadgeStyle,
+} from "../utils/studentProfile"
 
 
 interface Student {
@@ -13,6 +18,8 @@ interface Student {
   full_name: string
   lrn: string
   school_year: string
+  student_type?: string | null
+  section?: string | null
   created_at: string
 }
 
@@ -42,6 +49,8 @@ export default function ResultsTab({ schoolYearFilter, adminName }: Props) {
   const [loading, setLoading] = useState(true)
   const [studentSearch, setStudentSearch] = useState("")
   const [courseFilter, setCourseFilter] = useState("all")
+  const [studentTypeFilter, setStudentTypeFilter] = useState("all")
+  const [sectionFilter, setSectionFilter] = useState("all")
   const [sortBy, setSortBy] = useState("newest")
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -55,7 +64,7 @@ export default function ResultsTab({ schoolYearFilter, adminName }: Props) {
     const [{ data: studentData }, { data: rankData }, { data: assessmentData }, { data: courseData }, { data: prefData }] = await Promise.all([
       supabase
         .from("students")
-        .select("id, full_name, lrn, school_year, created_at")
+        .select("id, full_name, lrn, school_year, student_type, section, created_at")
         .order("created_at", { ascending: false }),
       supabase
         .from("rankings")
@@ -201,14 +210,16 @@ export default function ResultsTab({ schoolYearFilter, adminName }: Props) {
   const exportStudentsCSV = () => {
     const exportRows = filteredStudents
     const csv = [
-      "Full Name,LRN,Date Taken,Preferred,Recommended,Enrolled Course",
+      "Full Name,LRN,Student Type,Section,Date Taken,Preferred,Recommended,Enrolled Course",
       ...exportRows.map(
         s => {
+          const studentType = s.student_type || "—"
+          const section = s.section || "—"
           const pref = (studentCourses[s.id]?.preferred || []).join(" / ")
           const rec = (studentCourses[s.id]?.recommended || []).join(" / ")
           const enrolled = placementStatuses[s.id]?.label || ""
           const takenAt = takenAtByStudent[s.id] ? formatTakenAt(takenAtByStudent[s.id]) : ""
-          return `"${s.full_name}","${s.lrn}","${takenAt}","${pref}","${rec}","${enrolled}"`
+          return `"${s.full_name}","${s.lrn}","${studentType}","${section}","${takenAt}","${pref}","${rec}","${enrolled}"`
         }
       ),
     ].join("\n")
@@ -234,19 +245,29 @@ export default function ResultsTab({ schoolYearFilter, adminName }: Props) {
         const placement = placementStatuses[s.id]
         const matchesSearch =
           s.full_name?.toLowerCase().includes(q) ||
-          s.lrn?.includes(studentSearch)
+          s.lrn?.includes(studentSearch) ||
+          s.section?.toLowerCase().includes(q) ||
+          s.student_type?.toLowerCase().includes(q)
 
         const matchesCourse =
           courseFilter === "all" ||
           (courseFilter === "unassigned" && placement?.status !== "assigned") ||
           placement?.courseId === courseFilter
 
+        const matchesStudentType =
+          studentTypeFilter === "all" ||
+          s.student_type === studentTypeFilter
+
+        const matchesSection =
+          sectionFilter === "all" ||
+          (sectionFilter === "none" ? !s.section : s.section === sectionFilter)
+
         const studentYearStart = s.school_year ? getStartYear(s.school_year) : 0
         const matchesSchoolYear =
           schoolYearFilter === "all" ||
           studentYearStart === filterYearStart
 
-        return matchesSearch && matchesCourse && matchesSchoolYear
+        return matchesSearch && matchesCourse && matchesStudentType && matchesSection && matchesSchoolYear
       })
       .sort((a, b) => {
         const placementA = placementStatuses[a.id]?.label || ""
@@ -265,7 +286,7 @@ export default function ResultsTab({ schoolYearFilter, adminName }: Props) {
             return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         }
       })
-  }, [courseFilter, placementStatuses, sortBy, studentSearch, students, schoolYearFilter])
+  }, [courseFilter, placementStatuses, schoolYearFilter, sectionFilter, sortBy, studentSearch, studentTypeFilter, students])
 
   return (
     <div>
@@ -327,12 +348,33 @@ export default function ResultsTab({ schoolYearFilter, adminName }: Props) {
               }}
             />
             <input
-              placeholder="Search students by name or LRN..."
+              placeholder="Search by name, LRN, or section..."
               value={studentSearch}
               onChange={e => setStudentSearch(e.target.value)}
               style={{ ...inputStyle, paddingLeft: "36px" }}
             />
           </div>
+          <select
+            value={studentTypeFilter}
+            onChange={e => setStudentTypeFilter(e.target.value)}
+            style={{ ...inputStyle, flex: "0 1 180px" }}
+          >
+            <option value="all">All student types</option>
+            {STUDENT_TYPES.map(type => (
+              <option key={type} value={type}>{type}</option>
+            ))}
+          </select>
+          <select
+            value={sectionFilter}
+            onChange={e => setSectionFilter(e.target.value)}
+            style={{ ...inputStyle, flex: "0 1 170px" }}
+          >
+            <option value="all">All sections</option>
+            {STUDENT_SECTIONS.map(sec => (
+              <option key={sec} value={sec}>{sec}</option>
+            ))}
+            <option value="none">No section</option>
+          </select>
           <select
             value={courseFilter}
             onChange={e => setCourseFilter(e.target.value)}
@@ -363,52 +405,78 @@ export default function ResultsTab({ schoolYearFilter, adminName }: Props) {
         </p>
 
         {loading ? (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
-            <thead>
-              <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
-                {["Full Name", "LRN", "Date Taken", "Preferred", "Recommended", "Enrolled Course", "Actions"].map(h => (
-                  <th key={h} style={{ textAlign: "left", padding: "10px 12px", color: "#6b7280", fontWeight: "600" }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              <SkeletonTableRows columns={7} rows={8} />
-            </tbody>
-          </table>
+          <div className="table-responsive">
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
+              <thead>
+                <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
+                  {["Full Name", "LRN", "Student Type", "Section", "Date Taken", "Preferred", "Recommended", "Enrolled Course", "Actions"].map(h => (
+                    <th key={h} style={{ textAlign: "left", padding: "10px 12px", color: "#6b7280", fontWeight: "600", whiteSpace: "nowrap" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <SkeletonTableRows columns={9} rows={8} />
+              </tbody>
+            </table>
+          </div>
         ) : filteredStudents.length === 0 ? (
           <p style={{ textAlign: "center", color: "#9ca3af", padding: "24px 0" }}>No students found</p>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
-            <thead>
-              <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
-                {["Full Name", "LRN", "Date Taken", "Preferred", "Recommended", "Enrolled Course", "Actions"].map(h => (
-                  <th
-                    key={h}
-                    style={{ textAlign: "left", padding: "10px 12px", color: "#6b7280", fontWeight: "600" }}
+          <div className="table-responsive">
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
+              <thead>
+                <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
+                  {["Full Name", "LRN", "Student Type", "Section", "Date Taken", "Preferred", "Recommended", "Enrolled Course", "Actions"].map(h => (
+                    <th
+                      key={h}
+                      style={{ textAlign: "left", padding: "10px 12px", color: "#6b7280", fontWeight: "600", whiteSpace: "nowrap" }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredStudents.map((s, i) => (
+                  <tr
+                    key={s.id}
+                    style={{
+                      borderBottom: "1px solid #f3f4f6",
+                      backgroundColor: i % 2 === 0 ? "white" : "#f9fafb",
+                    }}
                   >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filteredStudents.map((s, i) => (
-                <tr
-                  key={s.id}
-                  style={{
-                    borderBottom: "1px solid #f3f4f6",
-                    backgroundColor: i % 2 === 0 ? "white" : "#f9fafb",
-                  }}
-                >
-                  <td style={{ padding: "10px 12px", fontWeight: "500" }}>{s.full_name}</td>
-                  <td style={{ padding: "10px 12px" }}>{s.lrn}</td>
-                  <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>
-                    {takenAtByStudent[s.id] ? (
-                      formatTakenAt(takenAtByStudent[s.id])
-                    ) : (
-                      <span style={{ color: "#9ca3af", fontSize: "12px" }}>—</span>
-                    )}
-                  </td>
+                    <td style={{ padding: "10px 12px", fontWeight: "500" }}>{s.full_name}</td>
+                    <td style={{ padding: "10px 12px" }}>{s.lrn}</td>
+                    <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>
+                      {s.student_type ? (
+                        <span
+                          style={{
+                            padding: "4px 10px",
+                            borderRadius: "12px",
+                            fontSize: "12px",
+                            ...getStudentTypeBadgeStyle(s.student_type),
+                          }}
+                        >
+                          {s.student_type}
+                        </span>
+                      ) : (
+                        <span style={{ color: "#9ca3af", fontSize: "12px" }}>—</span>
+                      )}
+                    </td>
+                    <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>
+                      {s.section ? (
+                        s.section
+                      ) : (
+                        <span style={{ color: "#9ca3af", fontSize: "12px" }}>—</span>
+                      )}
+                    </td>
+                    <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>
+                      {takenAtByStudent[s.id] ? (
+                        formatTakenAt(takenAtByStudent[s.id])
+                      ) : (
+                        <span style={{ color: "#9ca3af", fontSize: "12px" }}>—</span>
+                      )}
+                    </td>
                   <td style={{ padding: "10px 12px" }}>
                     {studentCourses[s.id]?.preferred.length ? (
                       <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
@@ -476,6 +544,7 @@ export default function ResultsTab({ schoolYearFilter, adminName }: Props) {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

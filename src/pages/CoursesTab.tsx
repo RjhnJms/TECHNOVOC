@@ -32,7 +32,7 @@ export default function CoursesTab() {
 
   const [showAddModal, setShowAddModal] = useState(false)
   const [newCourseName, setNewCourseName] = useState("")
-  const [newCourseCapacity, setNewCourseCapacity] = useState("70")
+  const [newCourseCapacity, setNewCourseCapacity] = useState("50")
   const [addError, setAddError] = useState("")
   const [adding, setAdding] = useState(false)
 
@@ -96,7 +96,7 @@ export default function CoursesTab() {
     }
 
     setNewCourseName("")
-    setNewCourseCapacity("70")
+    setNewCourseCapacity("50")
     setShowAddModal(false)
     fetchData()
   }

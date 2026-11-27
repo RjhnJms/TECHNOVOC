@@ -62,7 +62,7 @@ export default function AdminDashboard({ adminName, onLogout }: Props) {
     const existingCourseKeys = new Set((initialCourses || []).map(c => normalizeCourseName(c.course_name)))
     const missingCourses = NAVS_COURSES.filter(
       courseName => !existingCourseKeys.has(normalizeCourseName(courseName))
-    ).map(course_name => ({ course_name, capacity: 70 }))
+    ).map(course_name => ({ course_name, capacity: 50 }))
 
     if (missingCourses.length > 0) {
       await supabase.from("courses").insert(missingCourses)

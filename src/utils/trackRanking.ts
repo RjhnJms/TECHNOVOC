@@ -145,7 +145,7 @@ function tiebreakerCompare(a: TrackApplicant, b: TrackApplicant): number {
  * - Failed students: top 3 by score → "waitlist"; remainder → "rejected".
  *
  * **Capacity tiebreaker scenario:**
- * e.g. Course has 70 slots, 65 already filled, 5 remaining. But 10 students
+ * e.g. Course has 50 slots, 45 already filled, 5 remaining. But 10 students
  * all scored 6/10. The system uses the multi-criteria tiebreaker to fairly
  * rank them and place the top 5, while the remaining 5 go to "capacity_waitlist".
  */
